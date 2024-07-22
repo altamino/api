@@ -1,0 +1,25 @@
+{
+    "X:Y": "X -> message type, Y -> mediaType",
+
+    "0:0": "on_text_message",
+    "0:100": "on_image_message",
+    "0:103": "on_youtube_message",
+    "2:110": "on_voice_message",
+
+    "100:0": "on_delete_message",
+
+    "101:0": "on_group_member_join",
+    "102:0": "on_group_member_leave",
+
+    "104:0": "on_chat_background_changed",
+    "105:0": "on_chat_title_changed",
+    "106:0": "on_chat_icon_changed",
+    "113:0": "on_chat_content_changed",
+    "116:0": "on_chat_host_transfered",
+
+    "117:0": "on_text_message_force_removed",
+    "118:0": "on_chat_removed_message",
+    "119:0": "on_text_message_removed_by_admin",
+
+    "120:0": "on_chat_tip"
+}

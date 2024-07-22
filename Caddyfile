@@ -1,0 +1,30 @@
+# AltAmino's Caddyfile
+
+https://service.altamino.top {
+	reverse_proxy localhost:8080 :9999 {
+		lb_policy first
+		lb_try_duration 1s
+		fail_duration 30s
+		transport http {
+			dial_timeout 500ms
+		}
+	}
+}
+
+
+https://ws.altamino.top https://ws1.altamino.top https://ws2.altamino.top https://ws3.altamino.top https://ws4.altamino.top {
+	reverse_proxy localhost:8081 :9999 {
+		lb_policy first
+		lb_try_duration 1s
+		fail_duration 30s
+		transport http {
+			dial_timeout 500ms
+		}
+	}
+}
+
+# This is loopback that returning 502 error when servers are down.
+:9999 {
+	header Content-Type application/json
+	respond "{\"api:statuscode\": 503, \"api:duration\": \"0.000s\", \"api:message\": \"Seems like its down. Please wait while we solve this problem.\", \"api:timestamp\": \"1987-01-01T12:00:00Z\"}" 503
+}

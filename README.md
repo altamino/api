@@ -1,13 +1,12 @@
-# API servers
+# API
 
-So, they having bad time right now.
+![Redis](https://img.shields.io/badge/redis-%23DD0031.svg?style=for-the-badge&logo=redis&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?style=for-the-badge&logo=mongodb&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 
-My VPS with all set up was hosted on Servervy. And they are down for a while.
+![Version](https://img.shields.io/badge/version-1.0.0b1-blue) ![GitHub Issues](https://img.shields.io/github/issues/altamino/api) ![GitHub Pull Requests](https://img.shields.io/github/issues-pr/altamino/api)
 
-Code was only on their server, i haven't ANY copy of code. Like, at all.
+Backend for AltAmino.
 
-What that means? Probably, I will make all things from scratch. They don't respond me + they're down for a BIG while.
-
-I hate when this is happening. I lost all data when my server was at Oracle, and now it's happened again. THANKS.
-
-But hey, maybe it's sign to start making server not on Python, but on TypeScript? Who knows...
+Routes _REALLY_ needs rewrite...
