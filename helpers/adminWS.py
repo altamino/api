@@ -11,7 +11,7 @@ async def send_admin_ws(victims: list | str, payload: dict | str):
         "WS-ADMIN-KEY": Config.WS_ADMIN_KEY,
         "WS-ADMIN-VERIFY": Config.WS_ADMIN_VERIFY
     }
-    url = Config.WS_ADMIN_PROD if getenv("docker") in [1, "1"] else Config.WS_ADMIN_DEV
+    url = Config.WS_LINK
     async with websockets.connect(url, extra_headers=headers) as websocket:
         request = dumps({
             "ADMIN-SAYS": {

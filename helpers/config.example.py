@@ -22,7 +22,6 @@ class Config:
     API_DOMAIN = "https://service.altamino.top"
     SITE_DOMAIN = "http://altamino.top"
 
+    WS_LINK = "ws://127.0.0.1:8081"
     WS_ADMIN_KEY = ""
     WS_ADMIN_VERIFY = ""
-    WS_ADMIN_DEV = "wss://ws1.altamino.top"
-    WS_ADMIN_PROD = "ws://0.0.0.0:8080"
