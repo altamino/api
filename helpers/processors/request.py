@@ -103,8 +103,9 @@ class RequestProcessor:
                 content_length = int(content_length)
             # check if content_length is valid
 
-            if not SignatureProcessor.Validate(headers.get("NDC-MSG-SIG", ""), data):
-                return [False, Errors.InvalidRequest()]
+            if "media/upload" not in request.url.path:
+                if not SignatureProcessor.Validate(headers.get("NDC-MSG-SIG", ""), data):
+                    return [False, Errors.InvalidRequest()]
             
 
             if data and "media/upload" not in request.scope['path']:

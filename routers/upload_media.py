@@ -17,6 +17,8 @@ upload_media.route_class = CachableRoute
 @upload_media.post('/g/s/media/upload')
 async def upload(request: Request):
     t1 = timestamp()
+    if not request.state.session.get("uid"):
+        return Errors.InvalidSession(timestamp()-t1)
     
     # this is getting data
     body = await request.body()
@@ -69,6 +71,8 @@ async def upload(request: Request):
 @upload_media.post('/g/s/media/upload/target/{target}')
 async def upload_with_target(request: Request, target: str):
     t1 = timestamp()
+    if not request.state.session.get("uid"):
+        return Errors.InvalidSession(timestamp()-t1)
     
     # this is getting data
     body = await request.body()

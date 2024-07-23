@@ -66,6 +66,22 @@ class Errors:
         )
     
     @staticmethod
+    def WaitMinuteForAnotherCode(spent_time: Union[int, float] = 0):
+        return Base.Answer(
+            api_status_code=219, 
+            html_status_code=400,
+            api_message="Not so fast, Sonic! Wait for a minute to get code again",
+            spent_time=spent_time,
+        )  
+    @staticmethod
+    def TooManyRequest(spent_time: Union[int, float] = 0):
+        return Base.Answer(
+            api_status_code=219, 
+            html_status_code=400,
+            api_message="Whoa! Slow down! You are sending requests too quickly.",
+            spent_time=spent_time,
+        )   
+    @staticmethod
     def Forbidden(spent_time: Union[int, float] = 0):
         return Base.Answer(
             api_status_code=403, 
@@ -171,6 +187,14 @@ class Errors:
             api_message="Email was taken for another account. Try different one.",
             spent_time=spent_time
         )  
+    @staticmethod
+    def NotWorkingEmail(spent_time: Union[int, float] = 0):
+        return Base.Answer(
+            api_status_code=215, 
+            html_status_code=400, 
+            api_message="Sorry, but we can't send code to this email. Try different one.",
+            spent_time=spent_time
+        )
     @staticmethod
     def InvalidEmail(spent_time: Union[int, float] = 0):
         return Base.Answer(

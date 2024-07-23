@@ -28,7 +28,7 @@ class SessionProcessor:
         
         await CacheProcessor.Make(key, data, prefix, 86400)
 
-        return prefix+key
+        return key
     
     @staticmethod
     async def Get(session: str | bytes) -> dict | None:

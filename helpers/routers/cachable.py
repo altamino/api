@@ -1,4 +1,4 @@
-from re import findall
+from re import findall, sub
 from typing import Callable
 from orjson import loads, dumps
 from fastapi.routing import APIRoute
@@ -18,11 +18,15 @@ class CachableRoute(APIRoute):
     }
 
     async def make_key_for_cache(self, request: Request) -> str:
-        body = await request.body()
+        """
+        Hey, we really need to think how to properly cache
+        requests. Some values are dynamic.
+        """
+        body = (await request.body() or b"")
         if body:
             return make_hash(
                 request.scope['method'], request.scope['raw_path'],
-                str(request.headers), (await request.body() or b"")
+                str(request.headers), body
             )
         else: 
             return make_hash(
@@ -46,7 +50,7 @@ class CachableRoute(APIRoute):
             
             # if request cached
             key = await self.make_key_for_cache(request)
-            result = await CacheProcessor.Get(hashed_ip, "creq:")
+            result = await CacheProcessor.Get(key, "creq:")
             if result:
                 result = loads(result)
                 

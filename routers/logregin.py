@@ -31,8 +31,6 @@ async def seeVerificationCode(code):
     row = await table.find_one({"uniqueCode": code})
     await db.close()
     if row == None: return Errors.InvalidVerificationCode()
-    if ceil(timestamp()) - row['timestamp'] > 3600:
-        return Errors.ExpiredVerificationCode(timestamp()-t1) 
     img, _, __ = ImageTools.generate_captcha(row['captchaAnswer'])
     return StreamingResponse(img)
 
@@ -54,40 +52,46 @@ async def requestCode(request: Request):
             data['deviceID'] != request.headers['NDCDEVICEID']
         ) or (
             data['type'] != 1
-        ) or (
-            not EmailProcessor.Validate(reciever)
         ):
             raise Exception()
     except:
         return Errors.InvalidRequest(timestamp()-t1)
+
+    if EmailProcessor.NotWorking(reciever):
+        return Errors.NotWorkingEmail(timestamp()-t1)
+
+    if not EmailProcessor.Validate(reciever):
+        return Errors.InvalidEmail(timestamp()-t1)
     
     db = await Database().init()
     table = await db.get(table="VerificationCodes")
-    row = await table.find_one({
+    code_req = {
         "$or": [
             { "deviceId": data['deviceID'] },
             { "email": reciever }
         ]
-    })
+    }
+    row = await table.find_one(code_req)
+    uniqueCode, captchaAnswer = None, None
     if row != None:
-        if ceil(timestamp()) - row['timestamp'] <= 3600:
-            return Errors.VerificationCodeAlreadySent(timestamp()-t1)
+        if ceil(timestamp()) - row['timestamp'] <= 60:
+            return Errors.WaitMinuteForAnotherCode(timestamp()-t1)
         else:
-            await table.delete_many({
-                "$or": [
-                    { "deviceId": data['deviceID'] },
-                    { "email": reciever }
-                ]
+            await table.update_many(code_req, {
+                "$set": {"timestamp": int(timestamp())}
             })
+            uniqueCode = row['uniqueCode']
+            captchaAnswer = row['captchaAnswer']
     
-    uniqueCode = blake2b(
-        data['deviceID'].encode("utf-8"),
-        key="AltAmino".encode("utf-8"),
-        salt=str(ceil(timestamp())).encode("utf-8"),
-        digest_size=32
-    ).hexdigest()
+    if not uniqueCode:
+        uniqueCode = blake2b(
+            data['deviceID'].encode("utf-8"),
+            key="AltAmino".encode("utf-8"),
+            salt=str(ceil(timestamp())).encode("utf-8"),
+            digest_size=32
+        ).hexdigest()
 
-    c_img, c_answer, _ = ImageTools.generate_captcha() 
+    c_img, c_answer, _ = ImageTools.generate_captcha(captchaAnswer) 
 
     await table.insert_one( ModelFabric.Construct(
         Global.VerificationCodes,
@@ -186,7 +190,7 @@ async def register(request: Request):
         ) or (
             not EmailProcessor.Validate(reciever)
         ) or (
-            data['secret'][:2] != "0 " or data['nickname'].strip() in [None, ""] or data['clientCallbackURL'].strip() != "narviiapp://relogin"
+            data['secret'][:2] != "0 " or data['nickname'].strip() in [None, ""]
         ):
             raise Exception()
 

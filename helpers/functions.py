@@ -18,7 +18,7 @@ def make_hash(*args: str | bytes, salt: bytes = None, need_salt: bool = False):
     to_hash = b"".join([ item if isinstance(item, bytes) else item.encode() for item in args ])
     if need_salt and not salt:
         salt = Generator.Bytes(4)
-
+        
     if salt:
         return blake2s(to_hash, salt=salt).hexdigest()
     return blake2s(to_hash).hexdigest()
