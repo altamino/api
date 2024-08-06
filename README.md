@@ -12,9 +12,9 @@ Attempt to rewrite all code to Golang.
 
 ## ATTENTION!
 
-Beware that this branch will be heavily updated since it's just an attempt to rewrite **API** to Golang.
+Beware that this branch will be heavily updated since it's just an attempt to rewrite everything to Golang.
 
-After rewriting API, it will be merged with "dev" branch, and our next target to rewrite will be websockets.
+After rewriting, it will be merged with "dev" branch and it will be tested. If all things will work properly, it will be merged with "main" branch.
 
 ## But why Golang?
 
