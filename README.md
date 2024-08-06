@@ -6,9 +6,7 @@
 
 ![GitHub Issues](https://img.shields.io/github/issues/altamino/api) ![GitHub Pull Requests](https://img.shields.io/github/issues-pr/altamino/api)
 
-Backend for AltAmino.
-
-Attempt to rewrite all code to Golang.
+Backend for AltAmino. Rewritten to Golang using Fiber.
 
 ## ATTENTION!
 
