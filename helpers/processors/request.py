@@ -96,14 +96,18 @@ class RequestProcessor:
             ]:
                 return [False, Errors.InvalidRequest()]
             
-            content_length = headers.get("Content-Length", 0)
+            content_length = headers.get("Content-Length", "0")
             if not content_length.isdigit():
                 return [False, Errors.InvalidRequest()]
             else:
                 content_length = int(content_length)
             # check if content_length is valid
 
-            if "media/upload" not in request.url.path:
+            # since urlencoded is a little bit buggy (and required only when requests are empty as octets)
+            if headers['Content-Type'] == 'application/x-www-form-urlencoded':
+                if len(data) > 2 or content_length > 2:
+                    return [False, Errors.InvalidRequest()]
+            elif "media/upload" not in request.url.path:
                 if not SignatureProcessor.Validate(headers.get("NDC-MSG-SIG", ""), data):
                     return [False, Errors.InvalidRequest()]
             

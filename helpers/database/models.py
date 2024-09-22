@@ -1,13 +1,32 @@
-from marshmallow.fields import UUID, Integer, String, Email, Dict, List, Bool, Float, Raw
+from marshmallow.fields import (
+    UUID,
+    Integer,
+    String,
+    Email,
+    Dict,
+    List,
+    Bool,
+    Float,
+    Raw,
+)
 from marshmallow import Schema
 from datetime import datetime
 from json import loads
 from uuid import uuid4
 from time import time
 
-def tmstmpe1(): return int(time())
-def tmstmpe1000(): return int(time()*1000)
-def dttmn(): return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def tmstmpe1():
+    return int(time())
+
+
+def tmstmpe1000():
+    return int(time() * 1000)
+
+
+def dttmn():
+    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 class ModelFabric:
     @staticmethod
@@ -16,8 +35,9 @@ class ModelFabric:
         loadedSchema = initedSchema.load(dict(**kwargs))
         return loads(initedSchema.dumps(loadedSchema))
 
+
 class Global:
-    class Users(Schema): 
+    class Users(Schema):
         id = UUID(default=str(uuid4()), metadata={"as_string": True})
         role = Integer(default=0)
         aminoId = String(required=True)
@@ -88,10 +108,11 @@ class Global:
         createdTime = String(default=dttmn)
         modifiedTime = String(default=dttmn)
 
+
 class Community:
     class Chats(Schema):
         id = UUID(required=True, metadata={"as_string": True})
-        chatType = Integer(default=2) # 2 - public chat, 0 - private
+        chatType = Integer(default=2)  # 2 - public chat, 0 - private
         title = String(allow_none=True)
         description = String(default=None, allow_none=True)
         hostId = UUID(required=True)
@@ -102,7 +123,9 @@ class Community:
         lastReadedList = Dict(default={})
         lastMessageId = String(default=None)
         icon = String(allow_none=True)
-        background = String(default="https://media.altamino.top/default-chat-room-background/10_00.png")
+        background = String(
+            default="https://media.altamino.top/default-chat-room-background/10_00.png"
+        )
         announcement = String(default=None)
         pinAnnouncement = Bool(default=False)
         status = Integer(default=0)
@@ -119,13 +142,13 @@ class Community:
         messageType = Integer(default=0)
         clientRefId = Integer(default=0)
         content = String(default=None, allow_none=True)
-        mediaType = Integer(default=0) # 0 if nothing, 100 if image
+        mediaType = Integer(default=0)  # 0 if nothing, 100 if image
         mediaValue = String(default=None, allow_none=True)
         timestamp = Integer(default=tmstmpe1000)
         extensions = Dict(default={}, allow_none=True)
         createdTime = String(default=dttmn)
 
-    class Users(Schema): 
+    class Users(Schema):
         id = UUID(required=True, metadata={"as_string": True})
         nickname = String(required=True)
         description = String(default=None)
