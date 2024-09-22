@@ -19,13 +19,14 @@ from routers.configurations import configurations
 # app things
 
 app = FastAPI(
-    title="AltAmino", version="1.0.0b1",
-    docs_url=None, redoc_url=None
+    title="AltAmino", version="1.0.0b1", docs_url="/api/v1/docs", redoc_url=None
 )
+
 
 @app.get("/")
 def redirect():
     return RedirectResponse("https://altamino.top")
+
 
 app.include_router(mock, prefix="/api/v1")
 app.include_router(chats, prefix="/api/v1")
@@ -35,10 +36,7 @@ app.include_router(upload_media, prefix="/api/v1")
 app.include_router(configurations, prefix="/api/v1")
 app.include_router(profile_methods, prefix="/api/v1")
 
-app.add_middleware(
-    BrotliMiddleware,
-    gzip_fallback=True
-)
+app.add_middleware(BrotliMiddleware, gzip_fallback=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -47,15 +45,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.exception_handler(403)
 @app.exception_handler(422)
 async def custom_403_handler(_, __):
     return Errors.Forbidden()
 
+
 @app.exception_handler(404)
 @app.exception_handler(405)
 async def custom_404_handler(_, __):
     return Errors.InvalidPath()
+
 
 @app.exception_handler(500)
 async def custom_500_handler(_, __):
