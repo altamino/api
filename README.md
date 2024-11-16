@@ -1,6 +1,6 @@
 # API (dev)
 
-![dev branch](https://img.shields.io/badge/branch_dev-blue?style=for-the-badge)
+![dev branch](https://img.shields.io/badge/branch-dev-blue?style=for-the-badge)
 
 ![Go](https://img.shields.io/badge/go-%2300ADD8.svg?style=for-the-badge&logo=go&logoColor=white) 
 
