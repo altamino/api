@@ -186,6 +186,29 @@ async def edit_chat(chatId: str, request: Request):
         return Errors.NotEnoughRights(timestamp() - t1)
 
 
+# delete chat
+# [DELETE] /g/s/chat/thread/434cd5b4-a984-42c4-8375-46c1c6e0803d
+
+
+@chats.delete("/g/s/chat/thread/{chatId}")
+async def delete_chat(chatId: str, request: Request):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession()
+    
+    trigger_uid = request.state.session["uid"]
+    db = await Database().init()
+    table = await db.get("x0", "Chats")
+    chat_info = await table.find_one({"id": chatId})
+    if chat_info["hostId"] == trigger_uid:
+        await table.delete_one({"id": chatId})
+        await db.close()
+        return Base.Answer()
+    else:
+        await db.close()
+        return Errors.NotEnoughRights(timestamp() - t1)
+
+
 # if chat exists + where user is
 
 

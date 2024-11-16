@@ -11,6 +11,7 @@ from fastapi import Request
 from typing import Union, Optional
 from fastapi.responses import ORJSONResponse
 
+
 class RequestProcessor:
     """
     Processor that validates request in middleware.
@@ -21,13 +22,15 @@ class RequestProcessor:
 
     @staticmethod
     def __is_timestamp_valid(timestamp: int | str):
-        '''
-            True if timestamp is good, False if bad
-        '''
+        """
+        True if timestamp is good, False if bad
+        """
         if isinstance(timestamp, str):
-            if timestamp.isdigit(): timestamp = int(timestamp)
-            else: return False
-        return ceil(time()) - ceil(timestamp/1000) <= 5
+            if timestamp.isdigit():
+                timestamp = int(timestamp)
+            else:
+                return False
+        return ceil(time()) - ceil(timestamp / 1000) <= 5
 
     @staticmethod
     async def Validate(request: Request) -> Union[bool, Optional[ORJSONResponse]]:
@@ -44,13 +47,9 @@ class RequestProcessor:
         data = await request.body() or bytes()
         user_agent = headers.get("user-agent", "INVALID")
 
-        if (
-            user_agent == "INVALID"
-        ) or (
-            not UserAgentProcessor.Validate(user_agent)
-        ):
+        if (user_agent == "INVALID") or (not UserAgentProcessor.Validate(user_agent)):
             return [False, Errors.UnsupportedClient()]
-        
+
         """
         [TODO]: making cool too many requests
         Blocking IPs as Amino does is stupid. So I have two ideas:
@@ -70,32 +69,43 @@ class RequestProcessor:
         # TODO:
         # deprecate "service.aminoapps.com" and "service.narvii.com"
         # since its useless
-        if headers.get("Host") not in ["service.narvii.com", "service.aminoapps.com", "service.altamino.top"]:
+        if headers.get("Host") not in [
+            "service.narvii.com",
+            "service.aminoapps.com",
+            "service.altamino.top",
+        ]:
             return [False, Errors.SUS()]
-        
+
         if not DeviceProcessor.Validate(headers.get("NDCDEVICEID", "")):
             return [False, Errors.UnsupportedClient()]
-        
+
         possible_session = await SessionProcessor.Get(headers.get("NDCAUTH"))
         if possible_session:
             auid = headers.get("AUID")
-            if not auid or auid != possible_session['uid']:
+            if not auid or auid != possible_session["uid"]:
                 return [False, Errors.InvalidSession()]
-            
+
             # TODO: maybe its insecure, we need to check it
             request.state.session = {"validsession": True} | possible_session
         else:
             request.state.session = {"validsession": False}
-        
+
         # non-get request checks
-        if request.method in ['POST', 'DELETE']:
-            if headers.get("Content-Type") not in [
-                "image/jpg", "image/jpeg", "image/png", "image/webp", "image/gif",
-                'application/x-www-form-urlencoded', 'application/octet-stream',
-                'application/json', 'application/json; charset=utf-8'
+        if request.method in ["POST", "DELETE"]:
+            content_type = headers.get("Content-Type") or "application/octet-stream"
+            if content_type not in [
+                "image/jpg",
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+                "image/gif",
+                "application/x-www-form-urlencoded",
+                "application/octet-stream",
+                "application/json",
+                "application/json; charset=utf-8",
             ]:
                 return [False, Errors.InvalidRequest()]
-            
+
             content_length = headers.get("Content-Length", "0")
             if not content_length.isdigit():
                 return [False, Errors.InvalidRequest()]
@@ -104,24 +114,27 @@ class RequestProcessor:
             # check if content_length is valid
 
             # since urlencoded is a little bit buggy (and required only when requests are empty as octets)
-            if headers['Content-Type'] == 'application/x-www-form-urlencoded':
+            if content_type in [
+                "application/x-www-form-urlencoded",
+                "application/octet-stream",
+            ]:
                 if len(data) > 2 or content_length > 2:
                     return [False, Errors.InvalidRequest()]
             elif "media/upload" not in request.url.path:
-                if not SignatureProcessor.Validate(headers.get("NDC-MSG-SIG", ""), data):
+                if not SignatureProcessor.Validate(
+                    headers.get("NDC-MSG-SIG", ""), data
+                ):
                     return [False, Errors.InvalidRequest()]
-            
 
-            if data and "media/upload" not in request.scope['path']:
+            if data and "media/upload" not in request.scope["path"]:
                 try:
                     json = loads(data)
-                
-                    if not RequestProcessor.__is_timestamp_valid(json.get("timestamp", 0)):
+
+                    if not RequestProcessor.__is_timestamp_valid(
+                        json.get("timestamp", 0)
+                    ):
                         return [False, Errors.ExpiredRequest()]
                 except:
                     return [False, Errors.InvalidRequest()]
-                
-        return [True, None]
-                
-            
 
+        return [True, None]
