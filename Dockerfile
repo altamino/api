@@ -8,6 +8,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN useradd -U -u 1000 -m appuser && \
     mkdir -p /home/appuser/.cache/uv && \
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
     chown -R 1000:1000 /app /home/appuser/
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
