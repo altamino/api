@@ -112,6 +112,25 @@ async def user_search(
             .sort("timestamp", DESCENDING)
         ]
 
+        if ndcId == 0:
+            query = {"aminoId": {"$regex": nickname_query, "$options": "i"}}
+
+            temp = [
+                item["id"]
+                async for item in g_users.find(query)
+                .skip(start)
+                .limit(size)
+                .sort("timestamp", DESCENDING)
+            ]
+
+            users += [
+                item
+                async for item in xndc_users.find({"id": {"$in": temp}})
+                .skip(start)
+                .limit(size)
+                .sort("timestamp", DESCENDING)
+            ]
+
         seen = set()
         unique_users = []
         for item in users:

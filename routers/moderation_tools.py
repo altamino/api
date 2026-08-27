@@ -29,6 +29,7 @@ async def check_rights(
         return False, 0
 
     role = user.get("role", 0)
+    print(role)
 
     if no_curators and role == UserRole.Curator:
         return False, 0
