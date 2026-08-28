@@ -235,18 +235,15 @@ class Community:
         modifiedTime = String(load_default=dttmn)
         isSubWM = Bool(load_default=False)
 
-    class Comment(Schema):
-        commentId = UUID(
-            load_default=lambda: str(uuid4()), metadata={"as_string": True}
-        )
-        rootId = String(required=True)  # e.g., "blog:uuid" or "profile:uuid"
-        parentId = UUID(
-            load_default=None, allow_none=True, metadata={"as_string": True}
-        )
-        authorId = UUID(required=True, metadata={"as_string": True})
-        content = String(required=True)
-        mediaList = List(Raw, load_default=[], allow_none=True)
-        upvotes = List(UUID(metadata={"as_string": True}), load_default=[])
-        downvotes = List(UUID(metadata={"as_string": True}), load_default=[])
-        createdTime = String(load_default=dttmn)
-        modifiedTime = String(load_default=dttmn)
+
+class CommentSchema(Schema):
+    commentId = UUID(load_default=lambda: str(uuid4()), metadata={"as_string": True})
+    rootId = String(required=True)  # e.g., "blog:uuid" or "profile:uuid"
+    parentId = UUID(load_default=None, allow_none=True, metadata={"as_string": True})
+    authorId = UUID(required=True, metadata={"as_string": True})
+    content = String(required=True)
+    mediaList = List(Raw, load_default=[], allow_none=True)
+    upvotes = List(UUID(metadata={"as_string": True}), load_default=[])
+    downvotes = List(UUID(metadata={"as_string": True}), load_default=[])
+    createdTime = String(load_default=dttmn)
+    modifiedTime = String(load_default=dttmn)

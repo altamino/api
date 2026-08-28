@@ -15,6 +15,7 @@ from routers.blogs import blog_methods
 from routers.chats import chats
 from routers.communities import communities
 from routers.configurations import configurations
+from routers.comments import comments_router
 from routers.links import links
 from routers.logregin import logregin
 from routers.mock import mock
@@ -50,6 +51,7 @@ app.include_router(configurations, prefix="/api/v1")
 app.include_router(profile_methods, prefix="/api/v1")
 app.include_router(communities, prefix="/api/v1")
 app.include_router(blog_methods, prefix="/api/v1")
+app.include_router(comments_router, prefix="/api/v1")
 app.include_router(moderation_tools, prefix="/api/v1")
 app.include_router(altacm, prefix="/api/v1")
 app.include_router(altteam, prefix="/api/v1")

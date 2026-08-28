@@ -31,7 +31,7 @@ async def make_link(request: Request, ndcId: int = 0):
             check_table = db.get(f"x{ndcId}", "Users")
         else:
             check_table = db.get(table="Users")
-    elif data["objectType"] == 1:
+    elif data["objectType"] in [1, 2]:
         check_table = db.get(f"x{ndcId}", "Blogs")
     elif data["objectType"] == 12:
         check_table = db.get(f"x{ndcId}", "Chats")
@@ -39,6 +39,7 @@ async def make_link(request: Request, ndcId: int = 0):
         check_table = db.get(f"x{ndcId}", "Communities")
     else:
         db.close()
+        print(data)
         return Errors.UnimplementedPath(timestamp() - t1, lang=request.state.lang)
 
     check = await check_table.find_one({"id": data["objectId"]})
@@ -68,7 +69,7 @@ async def make_link(request: Request, ndcId: int = 0):
 
     if data["objectType"] == 0:
         return Base.Answer(Links.User(link), spent_time=timestamp() - t1)
-    elif data["objectType"] == 1:
+    elif data["objectType"] in [1, 2]:
         return Base.Answer(Links.Blog(link), spent_time=timestamp() - t1)
     elif data["objectType"] == 12:
         return Base.Answer(Links.Chat(link), spent_time=timestamp() - t1)
@@ -156,7 +157,7 @@ async def resolute_link(request: Request, q: str, ndcId: int = 0):
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
     if link["objectType"] == 0:
         return Base.Answer(Links.User(link), spent_time=timestamp() - t1)
-    elif link["objectType"] == 1:
+    elif link["objectType"] in [1, 2]:
         return Base.Answer(Links.Blog(link), spent_time=timestamp() - t1)
     elif link["objectType"] == 12:
         return Base.Answer(Links.Chat(link), spent_time=timestamp() - t1)

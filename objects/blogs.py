@@ -42,6 +42,9 @@ class Blog:
             xndc_users = connection.get(f"x{ndcId}", "Users")
             author_data = await xndc_users.find_one({"id": data["authorId"]}) or {}
 
+        comments = connection.get(f"x{ndcId}", "Comments")
+        commentsCount = await comments.count_documents({"rootId": f"blog:{data['id']}"})
+
         if author_data:
             async with await StoreService.create(data["authorId"], ndcId) as svc:
                 author_data["iconFrame"] = await svc.frame_icon(
@@ -68,7 +71,7 @@ class Blog:
             "type": data["blogType"],
             "status": data.get("status", 0),
             "votesCount": len(data.get("upvote", [])) - len(data.get("downvote", [])),
-            "commentsCount": len(data.get("wall", [])),
+            "commentsCount": commentsCount,
             "ndcId": ndcId,
             "createdTime": data["createdTime"],
             "modifiedTime": data["modifiedTime"],

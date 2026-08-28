@@ -7,13 +7,13 @@ class Comments:
     @staticmethod
     async def Parent(
         row,
-        commentId: str,
-        parentId: str,
         xndcid_users,
-        triggerUserId: str | None = None,
-        parentType: int = 0,
+        itemId: str,
+        itemType: int = 2,
         ndcId: int = 0,
-        extenstions: dict = {},
+        triggerUserId: str | None = None,
+        subcommentsCount: int = 0,
+        extensions: dict = {},
     ):
         upvotes = row.get("upvotes", [])
         downvotes = row.get("downvotes", [])
@@ -31,32 +31,30 @@ class Comments:
             "modifiedTime": row["modifiedTime"],
             "ndcId": ndcId,
             "votedValue": voteValue,
-            "parentType": parentType,  # im guessing its for posts and etc
-            "commentId": commentId,  # comment id
+            "parentType": itemType,
+            "commentId": row["commentId"],
             "parentNdcId": ndcId,
             "mediaList": MediaList.List(row.get("mediaList", [])),
             "votesSum": votesSum,
-            "subcommentsPreview": [],  # subcomments preview
+            "subcommentsPreview": [],
             "author": User.GetUserInfo(author, ndcId),
             "content": row["content"],
-            "extensions": {} | extenstions,
-            "parentId": parentId,
+            "extensions": {} | extensions,
+            "parentId": itemId,
             "createdTime": row["createdTime"],
-            "subcommentsCount": len(row["subWMs"]),
+            "subcommentsCount": subcommentsCount,
             "type": 0,
         }
 
     @staticmethod
     async def Son(
         row,
-        commentId: str,
-        headCommentId: str,
-        parentId: str,
         xndcid_users,
-        triggerUserId: str | None = None,
-        parentType: int = 0,
+        itemId: str,
+        itemType: int = 2,
         ndcId: int = 0,
-        extenstions: dict = {},
+        triggerUserId: str | None = None,
+        extensions: dict = {},
     ):
         upvotes = row.get("upvotes", [])
         downvotes = row.get("downvotes", [])
@@ -71,19 +69,19 @@ class Comments:
             author["iconFrame"] = await svc.frame_icon(author.get("frameId"))
 
         return {
-            "headCommentId": headCommentId,
+            "headCommentId": row.get("parentId"),
             "modifiedTime": row["modifiedTime"],
             "ndcId": ndcId,
             "votedValue": voteValue,
-            "parentType": parentType,  # im guessing its for posts and etc
-            "commentId": commentId,  # comment id
+            "parentType": itemType,
+            "commentId": row["commentId"],
             "parentNdcId": ndcId,
             "mediaList": MediaList.List(row.get("mediaList", [])),
             "votesSum": votesSum,
             "author": User.GetUserInfo(author, ndcId),
             "content": row["content"],
-            "extensions": {} | extenstions,
-            "parentId": parentId,
+            "extensions": {} | extensions,
+            "parentId": itemId,
             "createdTime": row["createdTime"],
             "subcommentsCount": 0,
             "type": 0,
