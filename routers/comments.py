@@ -332,6 +332,9 @@ async def _get_comment_list(
 @comments_router.get("/g/s/blog/{blogId}/g-comment")
 @comments_router.get("/g/s/blog/{blogId}/comment")
 @comments_router.get("/x{ndcId}/s/blog/{blogId}/comment")
+@comments_router.get("/g/s/item/{blogId}/g-comment")
+@comments_router.get("/g/s/item/{blogId}/comment")
+@comments_router.get("/x{ndcId}/s/item/{blogId}/comment")
 async def get_blog_comments(
     request: Request,
     blogId: str,
