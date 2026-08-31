@@ -1112,6 +1112,7 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
 
     messageId = str(uuid4())
     xndc_users = db.get(f"x{ndcId}", "Users")
+    global_user = db.get(table="Users")
     table = db.get(f"x{ndcId}", f"_Chat:{chatId}")
     message = ModelFabric.Construct(
         Community.Message,
@@ -1156,6 +1157,7 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
         ndcId=ndcId,
         chatBubbleId=bubbleId,
         chatBubbleVersion=bubbleVersion,
+        global_user=global_user
     )
     answer = Base.Answer({"message": messageObj}, spent_time=timestamp() - t1)
 

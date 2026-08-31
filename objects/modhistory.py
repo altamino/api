@@ -1,5 +1,5 @@
 from helpers.i18n import i18n
-
+from helpers import uuid_to_long
 
 def _get_right_op_name(data: dict, lang: str):
     op = data["operation"]
@@ -26,6 +26,7 @@ def _get_right_op_name(data: dict, lang: str):
     return i18n.get(key, lang)
 
 
+
 class ModHistory:
     @staticmethod
     def Item(
@@ -38,7 +39,7 @@ class ModHistory:
         operation_name = _get_right_op_name(data, lang)
 
         return {
-            "logId": data["id"],
+            "logId": uuid_to_long(data["id"]),
             "operation": data["operation"],
             "operationName": operation_name,
             "operationDetail": data.get("reason"),

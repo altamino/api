@@ -15,6 +15,7 @@ from json import loads
 from uuid import uuid4
 from time import time
 
+from helpers import uuid_to_long
 
 def tmstmpe1():
     return int(time())
@@ -37,7 +38,7 @@ class ModelFabric:
 
 
 class MH_Item(Schema):
-    id = UUID(load_default=lambda: str(uuid4()), metadata={"as_string": True})
+    id = Integer(load_default=lambda: uuid_to_long(str(uuid4())))
     operation = Integer(required=True)
     additionalValue = Integer(required=False)
     reason = String(load_default="")

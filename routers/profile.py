@@ -823,12 +823,21 @@ async def edit_user_info(uid, request: Request, ndcId=0):
     if len(preparedQueries) == 0 and lang is None:
         return Base.Answer({"exceptions": "No data provided."})
 
+
+
     db = await Database().init()
 
     if len(preparedQueries) > 1:
         table = db.get(database=f"x{ndcId}", table="Users")
         await table.update_one({"id": uid}, {"$set": preparedQueries})
 
+    if "customTitles" in data.get("extensions", {}):
+        customTitles = data["extensions"]["customTitles"]
+        table = db.get(database=f"x{ndcId}", table="Users")
+        await table.update_one(
+            {"id": uid},
+            {"$set": {"titles": customTitles}},
+        )
     if lang:
         table = db.get(table="Users")
         await table.update_one({"id": uid}, {"$set": lang})
