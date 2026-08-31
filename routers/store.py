@@ -63,8 +63,6 @@ async def apply_avatar_frame(request: Request, ndcId: int = 0):
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
     # [note] in case of default frame w/ None id
-    if not frame_id:
-        return Base.Answer()
 
     async with await StoreService.create(_uid(request), ndcId) as svc:
         ok = await svc.apply_avatar_frame(frame_id, apply_to_all)

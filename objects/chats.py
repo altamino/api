@@ -83,6 +83,7 @@ class Chat:
         history_table=None,
         chatBubbleVersion=None,
         chatBubbleId=None,
+        global_user=None
     ):
         extensions = data.get("extensions", {})
         if extensions is None:
@@ -111,8 +112,35 @@ class Chat:
 
         xndc_data = await xndc_users.find_one({"id": data["authorId"]}) or {}
 
+        if global_user is not None:
+            global_row = await global_user.find_one({"id": data["authorId"]})
+            xndc_data["tagList"] = list(
+                set(global_row.get("tagList", []) + xndc_data.get("tagList", []))
+            )
+
+            xndc_data["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+
+            if "isTeamMember" in global_row:
+                xndc_data["isTeamMember"] = global_row["isTeamMember"]
+
+            if "isVerified" in global_row:
+                xndc_data["isVerified"] = global_row["isVerified"]
+            if global_row.get("status", 0) in [9, 10]:
+                xndc_data["status"] = global_row["status"]
+            if global_row.get("extensions", {}).get("__disabledLevel__"):
+                xndc_data["extensions"]["__disabledLevel__"] = global_row["extensions"][
+                    "__disabledLevel__"
+                ]
+
+
+
         async with await StoreService.create(data["authorId"], ndcId) as svc:
             xndc_data["iconFrame"] = await svc.frame_icon(xndc_data.get("frameId"))
+
+
+
+
+
 
         result = {
             "includedInSummary": True,
@@ -134,6 +162,7 @@ class Chat:
         if chatBubbleId:
             result["chatBubbleId"] = chatBubbleId
             result["chatBubbleVersion"] = chatBubbleVersion or 1
+
 
         return result
 

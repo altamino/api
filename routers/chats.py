@@ -873,6 +873,7 @@ async def get_chat_messages(
         .sort("timestamp", DESCENDING)
     ]
     xndc_users = db.get(f"x{ndcId}", "Users")
+    global_user = db.get(table="Users")
     messageList = []
 
     for message in messages:
@@ -898,6 +899,7 @@ async def get_chat_messages(
                 ndcId=ndcId,
                 chatBubbleVersion=bubbleVersion,
                 chatBubbleId=bubbleId,
+                global_user=global_user
             )
         )
 

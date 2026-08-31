@@ -723,6 +723,8 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
     row2 = await table.find_one({"id": uid})
     if row2 is None:
         return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+    comments_table = db.get(f"x{ndcId}", "Comments")
+    row2["commentsCount"] = await comments_table.count_documents({"rootId": f"profile:{uid}"})
 
     global_row = await g_table.find_one({"id": uid})
     if global_row:
@@ -750,7 +752,7 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
     db.close()
     async with await StoreService.create(trigger_uid, ndcId) as svc:
         row2["iconFrame"] = await svc.frame_icon(row2.get("frameId"))
-
+    
     return Base.Answer(
         {
             "userProfile": User.GetUserInfo(
@@ -772,7 +774,6 @@ async def edit_user_info(uid, request: Request, ndcId=0):
     t1 = timestamp()
     data = await request.json()
 
-    print(f"editing profile {uid}:", data)
     lang = None
 
     if not request.state.session["validsession"]:

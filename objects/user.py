@@ -160,7 +160,7 @@ class User:
             "notificationSubscriptionStatus": 0,
             "pushEnabled": True,
             "membershipStatus": membershipStatus,
-            "commentsCount": 0,  # !!!
+            "commentsCount": row.get("commentsCount", 0),  # !!!
         }
 
     @staticmethod
@@ -250,7 +250,7 @@ class User:
             "notificationSubscriptionStatus": 0,
             "pushEnabled": True,
             "membershipStatus": membershipStatus,
-            "commentsCount": 0,  # !!!
+            "commentsCount": row.get("commentsCount", 0),
         }
 
     # [NOTE] onlineStatus : 1 when online, 2 when not
@@ -350,7 +350,7 @@ class User:
             "notificationSubscriptionStatus": 0,
             "pushEnabled": True,
             "membershipStatus": membershipStatus,
-            "commentsCount": 0,  # !!!
+            "commentsCount": row.get("commentsCount", 0),
             "itemsCount": len(row.get("purchasedItems", {}).get("frames", []))
             + len(row.get("purchasedItems", {}).get("bubbles", [])),
             "visitPrivacy": 1,
