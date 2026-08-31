@@ -1864,10 +1864,170 @@ async def tip_chat(request: Request, chatId: str, ndcId: int = 0):
     }
 
     await chat_table.update_one({"id": chatId}, {"$set": {"tipInfo": updated_tip_info}})
-    connection.close()
+
+    g_table = connection.get(table="Users")
+    table = connection.get(database=f"x{ndcId}", table="Users")
+
+    row2 = await table.find_one({"id": trigger_uid})
+    if row2 is not None:
+        global_row = await g_table.find_one({"id": trigger_uid})
+        if global_row:
+            row2["tagList"] = list(
+                set(global_row.get("tagList", []) + row2.get("tagList", []))
+            )
+
+            row2["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+
+            if "isTeamMember" in global_row:
+                row2["isTeamMember"] = global_row["isTeamMember"]
+
+            if "isVerified" in global_row:
+                row2["isVerified"] = global_row["isVerified"]
+            if global_row.get("status", 0) in [9, 10]:
+                row2["status"] = global_row["status"]
+            if global_row.get("extensions", {}).get("__disabledLevel__"):
+                row2["extensions"]["__disabledLevel__"] = global_row["extensions"][
+                    "__disabledLevel__"
+                ]
+
+            if ndcId == 0:
+                row2 = global_row | row2
+
+        connection.close()
+        async with await StoreService.create(trigger_uid, ndcId) as svc:
+            row2["iconFrame"] = await svc.frame_icon(row2.get("frameId"))
+
+        message = ModelFabric.Construct(
+            Community.Message,
+            authorId=trigger_uid,
+            messageType=120,
+            extensions={"tippingCoins": coins},
+        )
+
+        message["threadId"] = chatId
+        message["author"] = User.GetUserInfo(
+                    row2,
+                    triggerUserId=trigger_uid,
+                    extensions=row2.get("extensions"),
+                    ndcId=ndcId,
+                )
+
+        ws_send_obj = {
+            "t": 1000,
+            "o": {
+                "ndcId": ndcId,
+                "membershipStatus": 1,
+                "chatMessage": message
+            }
+        }
+        ws_send_obj["o"]["chatMessage"]["type"] = ws_send_obj["o"]["chatMessage"].pop("messageType")
+
+        target = chat_info.get("memberList", []) + chat_info.get("invitedList", [])
+        asyncio.get_event_loop().create_task(send_admin_ws(ws_send_obj, target))
 
     return Base.Answer({"tipInfo": updated_tip_info}, spent_time=timestamp() - t1)
 
+async def _tip_log_list_response(connection, ndcId: str, chatId: str, start: int, size: int, t1):
+    chat_table = connection.get(f"x{ndcId}", "Chats")
+    chat_info = await chat_table.find_one({"id": chatId})
+    if chat_info is None:
+        return None
+
+    tip_info = chat_info.get("tipInfo", {})
+    tippers_list = tip_info.get("tippersList", [])
+
+    return {
+        "tipSummary": {
+            "tippersCount": tip_info.get("tippersCount", len(tippers_list)),
+            "totalCoins": tip_info.get("tippedCoins", 0),
+        },
+        "globalTipSummary": {
+            "tippersCount": 0,
+            "totalCoins": 0,
+        },
+        "paging": {
+            "nextPageToken": str(start + size) if start + size < len(tippers_list) else None,
+            "prevPageToken": str(max(start - size, 0)) if start > 0 else None,
+        },
+    }
+
+
+@chats.get("/x{ndcId}/s/chat/thread/{chatId}/tipping/tipped-users")
+@chats.get("/g/s/chat/thread/{chatId}/tipping/tipped-users")
+async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 25):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+
+    connection = await Database().init()
+    chat_table = connection.get(f"x{ndcId}", "Chats")
+    chat_info = await chat_table.find_one({"id": chatId})
+    if chat_info is None:
+        connection.close()
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    tip_info = chat_info.get("tipInfo", {})
+    tippers_list = tip_info.get("tippersList", [])
+    page = tippers_list[start:start + size]
+
+    ndc_users = connection.get(f"x{ndcId}", "Users")
+    g_table = connection.get(table="Users")
+
+    tipped_user_list = []
+    for entry in page:
+        uid = entry.get("uid")
+        row = await ndc_users.find_one({"id": uid})
+        global_row = await g_table.find_one({"id": uid})
+        if row is None or global_row is None:
+            continue
+
+        row["tagList"] = list(set(global_row.get("tagList", []) + row.get("tagList", [])))
+        row["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+        if "isTeamMember" in global_row:
+            row["isTeamMember"] = global_row["isTeamMember"]
+        if "isVerified" in global_row:
+            row["isVerified"] = global_row["isVerified"]
+        if global_row.get("status", 0) in [9, 10]:
+            row["status"] = global_row["status"]
+
+        async with await StoreService.create(uid, ndcId) as svc:
+            row["iconFrame"] = await svc.frame_icon(row.get("frameId"))
+
+        tipper_user = User.GetUserInfo(
+            row,
+            triggerUserId=trigger_uid,
+            extensions=row.get("extensions"),
+            ndcId=ndcId,
+        )
+
+        tipped_user_list.append({
+            "tipper": tipper_user,
+            "totalTippedCoins": entry.get("totalTippedCoins", 0.0),
+            "lastTippedTime": entry.get("lastTippedTime"),
+            "lastThankedTime": entry.get("lastThankedTime"),
+            "isTipperAccessible": True,
+        })
+
+    connection.close()
+    return Base.Answer({"tippedUserList": tipped_user_list}, spent_time=timestamp() - t1)
+
+
+@chats.get("/x{ndcId}/s/chat/thread/{chatId}/tipping/tipped-users-summary")
+@chats.get("/g/s/chat/thread/{chatId}/tipping/tipped-users-summary")
+async def tipped_users_summary(request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 15):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    connection = await Database().init()
+    result = await _tip_log_list_response(connection, ndcId, chatId, start, size, t1)
+    connection.close()
+    if result is None:
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    return Base.Answer(result, spent_time=timestamp() - t1)
 
 # invite to chat
 # /g/s/chat/thread/9978643e-5fa5-4b0b-82a4-70a5c71e32b1/member/invite

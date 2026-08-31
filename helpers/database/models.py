@@ -179,6 +179,8 @@ class Community:
         extensions = Dict(load_default={}, allow_none=True)
         createdTime = String(load_default=dttmn)
 
+
+
     class Users(Schema):
         id = UUID(required=True, metadata={"as_string": True})
         nickname = String(required=True)
