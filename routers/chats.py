@@ -923,6 +923,8 @@ async def get_chat_messages(
 # send message
 # /g/s/chat/thread/434cd5b4-a984-42c4-8375-46c1c6e0803d/message
 
+CALL_STATE_MESSAGE_TYPES = list(range(52, 61))
+
 
 @chats.post("/g/s/chat/thread/{chatId}/message")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/message")
@@ -934,34 +936,39 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
 
     try:
         data = await request.json()
+        allowed_types = [0, 2, 3] + CALL_STATE_MESSAGE_TYPES
+        is_call_state = data["type"] in CALL_STATE_MESSAGE_TYPES
         if (
             (
-                # [info] types in messagetypes.json
-                data["type"] not in [0, 2, 3]
+                data["type"] not in allowed_types
             )
             or (
-                data.get("mediaType")
+                not is_call_state
+                and data.get("mediaType")
                 and data["mediaType"] != 113
                 and (not data.get("mediaUploadValue"))
             )
             or (
-                data.get("mediaType", 0) == 103
+                not is_call_state
+                and data.get("mediaType", 0) == 103
                 and (
                     not data.get("mediaUploadValue", "").startswith("ytv://")
                     or data["type"] != 0
                 )
             )
-            or (data.get("mediaType", 0) == 110 and data["type"] != 2)
-            or (data["type"] != 0 and data.get("content") is not None)
+            or (not is_call_state and data.get("mediaType", 0) == 110 and data["type"] != 2)
+            or (not is_call_state and data["type"] != 0 and data.get("content") is not None)
             or (
-                data["type"] == 3
+                not is_call_state
+                and data["type"] == 3
                 and (
                     not isinstance(data.get("stickerId"), str)
                     or not data["stickerId"].startswith("e/")
                 )
             )
             or (
-                data["type"] == 0
+                not is_call_state
+                and data["type"] == 0
                 and data.get("mediaType", 0) == 0
                 and not isinstance(data.get("content"), str)
             )
