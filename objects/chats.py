@@ -137,6 +137,9 @@ class Chat:
         async with await StoreService.create(data["authorId"], ndcId) as svc:
             xndc_data["iconFrame"] = await svc.frame_icon(xndc_data.get("frameId"))
 
+        ex = xndc_data.get("extensions", {})
+        xndc_data["icon"] = None if ex.get("hideUserProfile", False) or xndc_data.get("icon") == "" else xndc_data.get("icon")
+
 
 
 

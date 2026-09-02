@@ -42,7 +42,7 @@ altteam.route_class = CachableRoute
 @altteam.get("/g/s/altteam/version")
 async def get_altteam_version(request: Request):
     t1 = timestamp()
-    latest_version = "1.0.3"
+    latest_version = "1.0.4"
     current_version = request.query_params.get("version")
     altTeamPage = "https://altamino.top/altapp"
     return Base.Answer(
@@ -808,6 +808,7 @@ async def disable_toggle(request: Request, t: str, action: str, objId: str):
     t1 = timestamp()
 
     _t = {"user": "Users", "community": "Communities"}
+    print(f"t: {t}, action: {action}, objId: {objId}")
 
     if t not in _t or action not in ("disable", "enable"):
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
@@ -828,8 +829,8 @@ async def disable_toggle(request: Request, t: str, action: str, objId: str):
     if result.matched_count == 0:
         db.close()
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+    db.close()
     return Base.Answer(
         {},
         spent_time=timestamp() - t1,
     )
-    db.close()

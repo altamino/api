@@ -583,12 +583,39 @@ async def get_community_profiles(
     db = await Database().init()
     try:
         table = db.get(f"x{ndcId}", "Users")
+        g_table = db.get(table="Users")
 
         items = []
         total = await table.count_documents(query)
+
+
+
+        
         async for item in table.find(query).skip(start).limit(size).sort(sort_order):
             async with await StoreService.create(item["id"], ndcId) as svc:
                 item["iconFrame"] = await svc.frame_icon(item.get("frameId"))
+
+            uid = item["id"]
+            global_row = await g_table.find_one({"id": uid})
+            if global_row:
+                item["tagList"] = list(
+                    set(global_row.get("tagList", []) + item.get("tagList", []))
+                )
+
+                item["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+
+                if "isTeamMember" in global_row:
+                    item["isTeamMember"] = global_row["isTeamMember"]
+
+                if "isVerified" in global_row:
+                    item["isVerified"] = global_row["isVerified"]
+                if global_row.get("status", 0) in [9, 10]:
+                    item["status"] = global_row["status"]
+                if global_row.get("extensions", {}).get("__disabledLevel__"):
+                    item["extensions"]["__disabledLevel__"] = global_row["extensions"][
+                        "__disabledLevel__"
+                    ]
+
 
             items.append(
                 User.OwnNonSensetiveProfile(item, ndcId=ndcId, membershipStatus=1)
@@ -786,6 +813,7 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
     db = await Database().init()
     try:
         table = db.get(f"x{ndcId}", "Users")
+        g_table = db.get(table="Users")
         cursor = table.find({"id": {"$in": uids}})
         rows_by_id = {row["id"]: row async for row in cursor}
         result = []
@@ -794,6 +822,32 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
                 row = rows_by_id[u]
                 async with await StoreService.create(u, ndcId) as svc:
                     row["iconFrame"] = await svc.frame_icon(row.get("frameId"))
+
+
+                uid = row["id"]
+                global_row = await g_table.find_one({"id": uid})
+                if global_row:
+                    row["tagList"] = list(
+                        set(global_row.get("tagList", []) + row.get("tagList", []))
+                    )
+
+                    row["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+
+                    if "isTeamMember" in global_row:
+                        row["isTeamMember"] = global_row["isTeamMember"]
+
+                    if "isVerified" in global_row:
+                        row["isVerified"] = global_row["isVerified"]
+                    if global_row.get("status", 0) in [9, 10]:
+                        row["status"] = global_row["status"]
+                    if global_row.get("extensions", {}).get("__disabledLevel__"):
+                        row["extensions"]["__disabledLevel__"] = global_row["extensions"][
+                            "__disabledLevel__"
+                        ]
+
+
+
+
                 result.append(
                     User.OwnNonSensetiveProfile(row, ndcId=ndcId, membershipStatus=1)
                 )

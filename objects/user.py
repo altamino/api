@@ -194,6 +194,8 @@ class User:
         if iconFrame is None:
             iconFrame = {}
 
+        icon = None if extensions.get("hideUserProfile", False) or row.get("icon") == "" else row.get("icon")
+
         return {
             "iconFrameId": iconFrame.get("frameId"),
             "avatarFrame": iconFrame or None,
@@ -206,7 +208,7 @@ class User:
             "nickname": row["nickname"],
             "tagList": row.get("tagList", []),
             "mediaList": MediaList.List(row.get("mediaList", [])),
-            "icon": None if row["icon"] == "" else row["icon"],
+            "icon": icon,
             "accountMembershipStatus": int(row.get("isPaidSubscriber", 0)),
             "ndcId": ndcId,  # 0 is global
             "isGlobal": ndcId == 0,
@@ -285,7 +287,7 @@ class User:
         iconFrame = row.get("iconFrame")
         if iconFrame is None:
             iconFrame = {}
-
+        icon = None if extensions.get("hideUserProfile", False) or row.get("icon") == "" else row.get("icon")
         return {
             "iconFrameId": iconFrame.get("frameId"),
             "avatarFrame": iconFrame or None,
@@ -299,7 +301,7 @@ class User:
             "tagList": row.get("tagList", []),
             "fanClubList": [],
             "mediaList": MediaList.List(row.get("mediaList", [])),
-            "icon": row.get("icon"),
+            "icon": icon,
             "accountMembershipStatus": int(row.get("isPaidSubscriber", 0)),
             "ndcId": ndcId,  # 0 is global
             "isGlobal": ndcId == 0,
