@@ -15,6 +15,7 @@ from helpers.functions import calculate_page_tokens, is_app_link, parse_page_tok
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Communities, Errors, User
 from objects.types import UserGroupType
+from objects.types.blogs import BlogType
 from helpers.database.redis import get as get_redis
 from helpers.config import Config
 
@@ -24,6 +25,8 @@ from services.store import StoreService
 from objects.types import UserRole
 from objects.types.store import StoreItemType
 from helpers.store import _iso
+from helpers.tipping_limiter import check_and_increment_tipping_limit
+
 
 communities = APIRouter()
 communities.route_class = CachableRoute
@@ -1809,3 +1812,116 @@ async def _set_collection_activation(
         db.close()
 
     return Base.Answer({"stickerCollection": collection}, spent_time=timestamp() - t1)
+
+
+
+
+
+
+
+@communities.post("/x{ndcId}/s/tipping")
+@communities.post("/g/s/blog/tipping")
+@turtlelimiter(limit=5, period=TurtleTime.minute, tag="tip")
+async def tipping(request: Request, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+
+    try:
+        data = await request.json()
+        coins = float(data.get("coins", 0))
+    except Exception:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+    if coins < 1 or coins > 500:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+    is_blocked, _ = await check_and_increment_tipping_limit(trigger_uid)
+    if is_blocked:
+        return Errors.TooManyRequest(timestamp() - t1, lang=request.state.lang)
+
+    objectId = data.get("objectId")
+    objectType = data.get("objectType")
+    if not objectId or not objectType:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+    transactionId = data.get("tippingContext", {}).get("transactionId", str(uuid4()))
+
+    #remake it later
+    tables = {}
+    for x in [BlogType.Basic, BlogType.Wiki, BlogType.Question, BlogType.Vote, BlogType.Image]:
+        tables[x] = f"Blogs"
+
+    table = tables.get(objectType)
+    if not table:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+    
+
+    
+    db = await Database().init()
+    users_table = db.get(table="Users")
+    sender = await users_table.find_one({"id": trigger_uid})
+    if sender is None:
+        db.close()
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+    if sender.get("coins", 0.0) < coins:
+        db.close()
+        return Errors.NotEnoughCoins(timestamp() - t1, lang=request.state.lang)
+
+    blogs_table = db.get(f"x{ndcId}", table)
+    _object = await blogs_table.find_one({"id": objectId})
+    if _object is None:
+        db.close()
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    author_uid = _object.get("authorId")
+
+    # Deduct from sender and credit author
+    if author_uid:
+        await users_table.update_one({"id": trigger_uid}, {"$inc": {"coins": -coins}})
+        await users_table.update_one({"id": author_uid}, {"$inc": {"coins": coins}})
+    else:
+        db.close()
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    # Update blog tipInfo leaderboard
+    tip_info = _object.get("tipInfo", {})
+    tippers_list = tip_info.get("tippersList", [])
+
+    tipper_entry = next((t for t in tippers_list if t.get("uid") == trigger_uid), None)
+    if tipper_entry:
+        tipper_entry["totalTippedCoins"] = round(
+            tipper_entry.get("totalTippedCoins", 0.0) + coins, 2
+        )
+    else:
+        ndc_users = db.get(f"x{ndcId}", "Users")
+        ndc_sender = await ndc_users.find_one({"id": trigger_uid}) or sender
+        tipper_entry = {
+            "uid": trigger_uid,
+            "nickname": ndc_sender.get("nickname", ""),
+            "icon": ndc_sender.get("icon"),
+            "reputation": ndc_sender.get("reputation", 0),
+            "totalTippedCoins": round(coins, 2),
+        }
+        tippers_list.append(tipper_entry)
+
+    tippers_list.sort(key=lambda x: x.get("totalTippedCoins", 0.0), reverse=True)
+    new_tipped_coins = round(tip_info.get("tippedCoins", 0.0) + coins, 2)
+
+    updated_tip_info = {
+        "tipMaxCoin": 500,
+        "tippersCount": len(tippers_list),
+        "tippable": True,
+        "tipMinCoin": 1,
+        "tippedCoins": new_tipped_coins,
+        "tippersList": tippers_list,
+    }
+
+    await blogs_table.update_one(
+        {"id": objectId}, {"$set": {"tipInfo": updated_tip_info}}
+    )
+    db.close()
+
+    return Base.Answer({"tipInfo": updated_tip_info}, spent_time=timestamp() - t1)

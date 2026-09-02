@@ -19,6 +19,7 @@ from helpers.functions import calculate_page_tokens, parse_page_token
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Blog, Errors, User, MediaList
 from objects.types import BlogType, UserRole
+from services.store import StoreService
 
 blog_methods = APIRouter()
 blog_methods.route_class = CachableRoute
@@ -811,3 +812,120 @@ async def tip_blog(request: Request, blogId: str, ndcId: int = 0):
     db.close()
 
     return Base.Answer({"tipInfo": updated_tip_info}, spent_time=timestamp() - t1)
+
+
+
+
+
+@blog_methods.get("/g/s/item/{blogId}/tipping/tipped-users-summary")
+@blog_methods.get("/x{ndcId}/s/item/{blogId}/tipping/tipped-users-summary")
+@blog_methods.get("/g/s/blog/{blogId}/tipping/tipped-users-summary")
+@blog_methods.get("/x{ndcId}/s/blog/{blogId}/tipping/tipped-users-summary")
+@blog_methods.get("/g/s/item/{blogId}/tipping/tipped-users")
+@blog_methods.get("/x{ndcId}/s/item/{blogId}/tipping/tipped-users")
+@blog_methods.get("/g/s/blog/{blogId}/tipping/tipped-users")
+@blog_methods.get("/x{ndcId}/s/blog/{blogId}/tipping/tipped-users")
+async def get_blog_tiped_users_summary(
+    request: Request,
+    blogId: str,
+    ndcId: int = 0,
+    start: int = 0,
+    size: int = 25,
+):
+    t1 = timestamp()
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+
+    connection = await Database().init()
+    blog_table = connection.get(f"x{ndcId}", "Blogs")
+    blog_info = await blog_table.find_one({"id": blogId})
+    if blog_info is None:
+        connection.close()
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    tip_info = blog_info.get("tipInfo", {})
+    tippers_list = tip_info.get("tippersList", [])
+    page = tippers_list[start:start + size]
+
+    ndc_users = connection.get(f"x{ndcId}", "Users")
+    g_table = connection.get(table="Users")
+
+    tipped_user_list = []
+    for entry in page:
+        uid = entry.get("uid")
+        row = await ndc_users.find_one({"id": uid})
+        global_row = await g_table.find_one({"id": uid})
+        if row is None or global_row is None:
+            continue
+
+        row["tagList"] = list(set(global_row.get("tagList", []) + row.get("tagList", [])))
+        row["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+        if "isTeamMember" in global_row:
+            row["isTeamMember"] = global_row["isTeamMember"]
+        if "isVerified" in global_row:
+            row["isVerified"] = global_row["isVerified"]
+        if global_row.get("status", 0) in [9, 10]:
+            row["status"] = global_row["status"]
+
+        async with await StoreService.create(uid, ndcId) as svc:
+            row["iconFrame"] = await svc.frame_icon(row.get("frameId"))
+
+        tipper_user = User.GetUserInfo(
+            row,
+            triggerUserId=trigger_uid,
+            extensions=row.get("extensions"),
+            ndcId=ndcId,
+        )
+
+        tipped_user_list.append({
+            "tipper": tipper_user,
+            "totalTippedCoins": entry.get("totalTippedCoins", 0.0),
+            "lastTippedTime": entry.get("lastTippedTime"),
+            "lastThankedTime": entry.get("lastThankedTime"),
+            "isTipperAccessible": True,
+        })
+
+    connection.close()
+    return Base.Answer({"tippedUserList": tipped_user_list}, spent_time=timestamp() - t1)
+
+
+
+
+
+#idk todo (for pool blogs)
+@blog_methods.get("/g/s/blog/{blogId}/poll/options-active-voterssummary")
+@blog_methods.get("/x{ndcId}/s/blog/{blogId}/poll/options-active-voterssummary")
+async def get_blog_poll_voters(
+    request: Request,
+    blogId: str,
+    ndcId: int = 0,
+    start: int = 0,
+    size: int = 25,
+):
+    t1 = timestamp()
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+    blog = await table.find_one({"id": blogId})
+    if blog is None:
+        db.close()
+        return Base.Answer({"userProfileList": []}, spent_time=timestamp() - t1)
+
+    votes = blog.get("pollVoters", [])
+    votes_selected = votes[start : start + size]
+
+    xndc_users = db.get(f"x{ndcId}", "Users")
+    trigger_uid = request.state.session.get("uid")
+
+    voters_list = [
+        User.GetUserInfo(u, ndcId=ndcId, triggerUserId=trigger_uid)
+        for item in votes_selected
+        if (u := await xndc_users.find_one({"id": item}))
+    ]
+
+    db.close()
+    return Base.Answer({"userProfileList": voters_list}, spent_time=timestamp() - t1)
+

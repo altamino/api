@@ -141,11 +141,9 @@ async def user_search(
         userProfileList = []
         for item in unique_users:
             g_row = await g_users.find_one({"id": item["id"]})
-            print("status:", g_row.get("status", 0))
             merged = (g_row or {}) | item
             if g_row.get("status") != 0 :
                 merged["status"] = g_row.get("status", 0)
-            print("merged status:", merged.get("status", 0))
 
             async with await StoreService.create(item["id"], ndcId) as svc:
                 merged["iconFrame"] = await svc.frame_icon(merged.get("frameId"))
