@@ -758,7 +758,7 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
         if ndcId == 0:
             row2 = global_row | row2
     if uid in await _get_online_uids(ndcId):
-        row2["onlineStatus"] = OnlineStatus.ONLINE
+        row2["onlineStatus"] = row2.get("onlineStatus", OnlineStatus.ONLINE)
     else:
         row2["onlineStatus"] = OnlineStatus.OFFLINE
 
@@ -964,9 +964,6 @@ async def get_wallet_ads_info(request: Request):
 
 
 
-
-
-
 @profile_methods.post("/x{ndcId}/s/user-profile/{uid}/online-status")
 async def online_status(uid: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
@@ -987,11 +984,13 @@ async def online_status(uid: str, request: Request, ndcId: int = 0):
     db = await Database().init()
     table = db.get(f"x{ndcId}", "Users")
 
-
-
     if "moodStickerId" in data:
-        await table.update_one({"id": uid}, {"$set": {"moodStickerId": data["moodStickerId"]}})
+        stickerId = data["moodStickerId"]
+        isBuiltInSticker = stickerId.startswith("e/") #todo checking
+        await table.update_one({"id": uid}, {"$set": {"moodStickerId": stickerId}})
     await table.update_one({"id": uid}, {"$set": {"onlineStatus": onlineStatus}})
     
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
+
+

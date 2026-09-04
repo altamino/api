@@ -887,15 +887,15 @@ async def live_layer_topic(
                     pass
 
     all_uids = await _get_online_uids(effective_ndcId)
-    total = len(all_uids)
-    page_uids = all_uids[start : start + size]
-    profiles = await _get_profiles_for_live_layer(effective_ndcId, page_uids)
+    profiles = await _get_profiles_for_live_layer(effective_ndcId, all_uids)
+    total = len(profiles)
+    page_profiles = profiles[start : start + size]
 
     return Base.Answer(
         Base.LiveLayerTopic(
             topic_name=topic,
             users_count=total,
-            users_list=profiles,
+            users_list=page_profiles,
         )
     )
 
