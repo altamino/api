@@ -1951,7 +1951,7 @@ async def _tip_log_list_response(connection, ndcId: str, chatId: str, start: int
         },
     }
 
-
+tipping/tipped-users?pagingType=t&size=25
 @chats.get("/x{ndcId}/s/chat/thread/{chatId}/tipping/tipped-users")
 @chats.get("/g/s/chat/thread/{chatId}/tipping/tipped-users")
 async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 25):
@@ -1964,6 +1964,7 @@ async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int
     connection = await Database().init()
     chat_table = connection.get(f"x{ndcId}", "Chats")
     chat_info = await chat_table.find_one({"id": chatId})
+    print(chatId,": ",chat_info)
     if chat_info is None:
         connection.close()
         return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
