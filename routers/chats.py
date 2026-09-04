@@ -1951,7 +1951,6 @@ async def _tip_log_list_response(connection, ndcId: str, chatId: str, start: int
         },
     }
 
-tipping/tipped-users?pagingType=t&size=25
 @chats.get("/x{ndcId}/s/chat/thread/{chatId}/tipping/tipped-users")
 @chats.get("/g/s/chat/thread/{chatId}/tipping/tipped-users")
 async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 25):
