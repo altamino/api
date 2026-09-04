@@ -10,6 +10,7 @@ from boto3 import resource
 from fastapi import APIRouter, Request
 from pymongo import DESCENDING
 
+from helpers.database.redis import get as get_redis
 from helpers.adminWS import send_ws_message as send_admin_ws
 from helpers.adminWS import ApiBroadcastType
 from helpers.config import Config
@@ -105,6 +106,47 @@ async def get_live_layer_chats(
     )
 
 
+
+async def _get_chatting_chat_ids(ndcId: int) -> list[str]:
+    redis = get_redis()
+    pattern = f"x{ndcId}:chat:*:chatting"
+    chat_ids = []
+    async for key in redis.scan_iter(pattern):
+        if isinstance(key, bytes):
+            key = key.decode()
+        # key: x{ndcId}:chat:{chatId}:chatting
+        parts = key.split(":")
+        if len(parts) >= 4:
+            chat_ids.append(parts[2])
+    return chat_ids
+
+@chats.get("/g/s/live-layer/public-chats")
+@chats.get("/x{ndcId}/s/live-layer/public-chats")
+async def live_layer_public_chats(
+    request: Request,
+    ndcId: int = 0,
+    start: int = 0,
+    size: int = 20,
+):
+    t1 = timestamp()
+    trigger_uid = request.state.session.get("uid")
+    con = await Database().init()
+
+    chat_ids = await _get_chatting_chat_ids(ndcId)
+    page_ids = chat_ids[start : start + size]
+
+    chats = [
+        await Chat.Info(chatId, trigger_uid=trigger_uid, connection=con)
+        for chatId in page_ids
+    ]
+    answer = {"threadList": [c for c in chats if c is not None]}
+    con.close()
+    return Base.Answer(answer, spent_time=timestamp() - t1)
+
+
+
+
+
 # chat search
 # /g/s/chat/thread/explore/search?q=Hello&size=25
 
@@ -158,38 +200,6 @@ async def user_search(
             {"messageList": [], "paging": {}}, spent_time=timestamp() - t1
         )
 
-
-# get global recommended chats
-# /g/s/live-layer/public-chats
-
-
-@chats.get("/g/s/live-layer/public-chats")
-@chats.get("/x{ndcId}/s/live-layer/public-chats")
-async def get_recommended_chats(request: Request, ndcId: int = 0):
-    t1 = timestamp()
-
-    trigger_uid = request.state.session.get("uid")
-    con = await Database().init()
-    if ndcId == 0:
-        chatIds = [
-            "e92cde26-3067-457f-930a-0be3b99dc9b5",  # EN
-            "0f668f3a-c5f5-42e0-b552-58b270e7841c",  # RU
-            "670cebaa-7d52-40a1-bcc7-5524a15ea3ed",  # ES
-            "6036bac0-d6fa-4413-8244-56d0cc6fa7b6",  # AR
-        ]
-        chats = [
-            await Chat.Info(
-                chatId,
-                trigger_uid=trigger_uid,
-                connection=con,
-            )
-            for chatId in chatIds
-        ]
-        answer = {"threadList": [c for c in chats if c is not None]}
-    else:
-        answer = {"threadList": []}
-    con.close()
-    return Base.Answer(answer, spent_time=timestamp() - t1)
 
 
 @chats.get("/g/s/chat/thread/explore/categories")

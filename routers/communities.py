@@ -800,15 +800,50 @@ async def remove_from_user_group(
     return Base.Answer({}, spent_time=timestamp() - t1)
 
 
-async def _get_online_uids(ndcId: int) -> list[str]:
+_BROWSING_TOPIC_KINDS = {
+    "users-browsing-blog-at": "blog",
+    "users-browsing-blogs": "blogs",
+    "users-browsing-item": "item",
+    "users-browsing-item-at": "item",
+    "users-browsing-user-profile-at": "user-profile",
+    "users-chatting": "chatting",
+    "users-chatting-private": "chatting-private",
+}
+
+def _pattern_browsing(ndcId: str, kind: str, target_id: str) -> str:
+    return f"x{ndcId}:browsing:{kind}:{target_id}:*"
+
+async def _get_browsing_uids(ndcId: str, kind: str, target_id: str | None) -> list[str]:
     redis = get_redis()
+    pattern = _pattern_browsing(ndcId, kind, target_id or "-")
+    print(pattern)
+    uids = []
+    async for key in redis.scan_iter(pattern):
+        if isinstance(key, bytes):
+            key = key.decode()
+        uids.append(key.split(":")[-1])
+    print(uids)
+    return uids
+
+async def _get_online_uids(ndcId: int, topic: str | None = None) -> list[str]:
+    redis = get_redis()
+
+    if topic and not topic.endswith(":online-members"):
+        # ndtopic:x{ndcId}:users-browsing-blog-at:{uuid}
+        parts = topic.split(":")
+        if len(parts) >= 4 and parts[2] in _BROWSING_TOPIC_KINDS:
+            kind = _BROWSING_TOPIC_KINDS[parts[2]]
+            target_id = parts[3]
+            return await _get_browsing_uids(ndcId, kind, target_id)
+        return []
+
     pattern = f"x{ndcId}:online:*"
     uids = []
     async for key in redis.scan_iter(pattern):
-        # key format is x{ndcId}:online:{uid}
-        uids.append(key.split(":")[-1])
+        if isinstance(key, bytes):
+            key = key.decode()
+        uids.append(key.split(":")[2])
     return uids
-
 
 async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict]:
     if not uids:
@@ -863,6 +898,9 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
         db.close()
 
 
+#https://dev-service.altamino.top/api/v1/x3/s/live-layer/public-chats?start=0&size=5
+#https://dev-service.altamino.top/api/v1/x3/s/live-layer/blogs?start=0&size=5
+
 @communities.get("/g/s/live-layer")
 @communities.get("/x{ndcId}/s/live-layer")
 async def live_layer_topic(
@@ -886,7 +924,7 @@ async def live_layer_topic(
                 except ValueError:
                     pass
 
-    all_uids = await _get_online_uids(effective_ndcId)
+    all_uids = await _get_online_uids(effective_ndcId, topic)
     profiles = await _get_profiles_for_live_layer(effective_ndcId, all_uids)
     total = len(profiles)
     page_profiles = profiles[start : start + size]
@@ -900,26 +938,60 @@ async def live_layer_topic(
     )
 
 
+
+async def _get_chatting_uids(ndcId: int) -> list[str]:
+    redis = get_redis()
+    pattern = f"x{ndcId}:chat:*:chatting"
+    uids = set()
+    async for key in redis.scan_iter(pattern):
+        members = await redis.smembers(key)
+        uids.update(m.decode() if isinstance(m, bytes) else m for m in members)
+    return list(uids)
+
+
+async def _get_browsing_kind_uids(ndcId: int, kind: str) -> list[str]:
+    redis = get_redis()
+    pattern = f"x{ndcId}:browsing:{kind}:*:*"
+    uids = set()
+    async for key in redis.scan_iter(pattern):
+        if isinstance(key, bytes):
+            key = key.decode()
+        uids.add(key.split(":")[-1])
+    return list(uids)
+
+
+
+async def _homepage_topics(ndcId: int) -> list[dict]:
+    chatting_uids = await _get_chatting_uids(ndcId)
+    chatting_profiles = await _get_profiles_for_live_layer(ndcId, chatting_uids)
+
+    blog_uids = await _get_browsing_kind_uids(ndcId, "blog")
+    blog_profiles = await _get_profiles_for_live_layer(ndcId, blog_uids)
+
+    topics = [
+        Base.LiveLayerTopic(
+            topic_name=f"ndtopic:x{ndcId}:users-chatting",
+            users_count=len(chatting_profiles),
+            users_list=chatting_profiles,
+        ),
+        Base.LiveLayerTopic(
+            topic_name=f"ndtopic:x{ndcId}:users-browsing-blogs",
+            users_count=len(blog_profiles),
+            users_list=blog_profiles,
+        ),
+    ]
+    for category in ("users-playing-quizzes", "users-polling-polls",
+                      "users-voting-blogs", "users-commenting-blogs",
+                      "users-browsing-pages", "users-live-chatting"):
+        topics.append(Base.LiveLayerTopic(topic_name=f"ndtopic:x{ndcId}:{category}"))
+    return topics
+
+
 @communities.get("/g/s/live-layer/homepage")
 @communities.get("/x{ndcId}/s/live-layer/homepage")
 async def live_layer(request: Request, ndcId: int = 0):
-    uids = await _get_online_uids(ndcId)
-    profiles = await _get_profiles_for_live_layer(ndcId, uids)
+    return Base.Answer({"liveLayerList": await _homepage_topics(ndcId)})
 
-    return Base.Answer(
-        {
-            "liveLayerList": [
-                Base.LiveLayerTopic(
-                    topic_name=f"ndtopic:x{ndcId}:online-members",
-                    users_count=len(profiles),
-                    users_list=profiles,
-                ),
-                Base.LiveLayerTopic(
-                    topic_name=f"ndtopic:x{ndcId}:watching",
-                ),
-            ]
-        }
-    )
 
 
 @communities.post("/g/s/community/joined/reorder")
