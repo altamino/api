@@ -11,8 +11,8 @@ from helpers.config import Config
 from helpers.decorators.validauth import validauth_required
 from helpers.adminWS import send_ws_message as send_admin_ws
 from helpers.adminWS import ApiBroadcastType
-
-
+from objects.types import OnlineStatus
+from helpers.database.redis import get as get_redis
 from helpers.checkins import (
     CHECKIN_COIN_REWARDS,
     CHECKIN_COIN_WEIGHTS,
@@ -73,7 +73,6 @@ async def change_aminoId(request: Request):
     db.close()
 
     return Base.Answer(spent_time=timestamp() - t1)
-
 
 @profile_methods.get("/g/s/user-profile/search")
 @profile_methods.get("/x{ndcId}/s/user-profile/search")
@@ -711,6 +710,14 @@ async def unfollow_user(uid: str, request: Request, ndcId: int = 0):
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
 
+async def _get_online_uids(ndcId: int) -> list[str]:
+    redis = get_redis()
+    pattern = f"x{ndcId}:online:*"
+    uids = []
+    async for key in redis.scan_iter(pattern):
+        # key format is x{ndcId}:online:{uid}
+        uids.append(key.split(":")[-1])
+    return uids
 
 @profile_methods.get("/g/s/user-profile/{uid}")
 @profile_methods.get("/x{ndcId}/s/user-profile/{uid}")
@@ -750,6 +757,10 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
 
         if ndcId == 0:
             row2 = global_row | row2
+    if uid in await _get_online_uids(ndcId):
+        row2["onlineStatus"] = OnlineStatus.ONLINE
+    else:
+        row2["onlineStatus"] = OnlineStatus.OFFLINE
 
     db.close()
     async with await StoreService.create(trigger_uid, ndcId) as svc:
@@ -950,3 +961,37 @@ async def get_wallet_ads_info(request: Request):
         {"estimatedCoinsEarnedByAds": 0, "coinsEarnedByAds": {"total": 0, "weekly": 0}},
         spent_time=timestamp() - t1,
     )
+
+
+
+
+
+
+@profile_methods.post("/x{ndcId}/s/user-profile/{uid}/online-status")
+async def online_status(uid: str, request: Request, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    suid = request.state.session["uid"]
+    if suid != uid:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+    try:data = await request.json()
+    except Exception:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+    onlineStatus = data.get("onlineStatus")
+    if onlineStatus not in [1, 2]: 
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Users")
+
+
+
+    if "moodStickerId" in data:
+        await table.update_one({"id": uid}, {"$set": {"moodStickerId": data["moodStickerId"]}})
+    await table.update_one({"id": uid}, {"$set": {"onlineStatus": onlineStatus}})
+    
+    db.close()
+    return Base.Answer(spent_time=timestamp() - t1)

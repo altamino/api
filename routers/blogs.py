@@ -418,6 +418,8 @@ async def edit_blog(request: Request, blogId: str, ndcId: int = 0):
 
     if "title" in data:
         preparedQueries["title"] = data["title"]
+    if "label" in data:
+        preparedQueries["title"] = data["label"]
     if "content" in data:
         preparedQueries["content"] = data["content"]
     if "mediaList" in data:

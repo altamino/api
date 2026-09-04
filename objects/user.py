@@ -1,5 +1,7 @@
 from typing import Union
 
+from objects.types import OnlineStatus
+
 from .medialist import MediaList
 
 
@@ -154,7 +156,7 @@ class User:
                 # None if ndcId == 0 else row["consecutiveDaysOfCheckIns"]
                 None
             ),  # [TODO] when communitues will be implemented do that
-            "onlineStatus": 2,  # [TODO]: check wtf is this
+            "onlineStatus": row.get("onlineStatus",OnlineStatus.OFFLINE), 
             "isNicknameVerified": bool(row.get("isVerified", False)),
             "verified": bool(len(row.get("tagList", []))),  # this fixes tagList! :D
             "notificationSubscriptionStatus": 0,
@@ -246,7 +248,7 @@ class User:
                 # None if ndcId == 0 else row["consecutiveDaysOfCheckIns"]
                 None
             ),  # [TODO] when communitues will be implemented do that
-            "onlineStatus": 2,  # [TODO]: check wtf is this
+            "onlineStatus": row.get("onlineStatus",OnlineStatus.OFFLINE), 
             "isNicknameVerified": bool(row.get("isVerified", False)),
             "verified": bool(len(row.get("tagList", []))),  # this fixes tagList! :D
             "notificationSubscriptionStatus": 0,
@@ -309,8 +311,8 @@ class User:
             "level": 0 if ndcId == 0 else get_level(row.get("reputation", 0)),
             "mood": None if ndcId == 0 else row.get("mood"),
             "moodSticker": (
-                None if ndcId == 0 else row.get("mood")
-            ),  # [TODO]: check wtf is this
+                None if ndcId == 0 else row.get("moodStickerId")
+            ),  # [TODO]: make full sticker object (id not show sticker on app)
             "content": ((row.get("description") or "").strip()),
             "joinedCount": len(row["following"]),
             "followingStatus": followingStatus,
@@ -346,7 +348,7 @@ class User:
             "consecutiveCheckInDays": (
                 None if ndcId == 0 else row.get("consecutiveCheckInDays", 0)
             ),  # [TODO] when communitues will be implemented do that
-            "onlineStatus": 2,  # [TODO]: check wtf is this
+            "onlineStatus": row.get("onlineStatus",OnlineStatus.OFFLINE),
             "isNicknameVerified": bool(row.get("isVerified", False)),
             "verified": bool(len(row.get("tagList", []))),  # this fixes tagList! :D
             "notificationSubscriptionStatus": 0,

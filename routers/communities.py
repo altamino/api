@@ -22,7 +22,7 @@ from helpers.config import Config
 from helpers.adminWS import send_ws_message as send_admin_ws
 from helpers.adminWS import ApiBroadcastType
 from services.store import StoreService
-from objects.types import UserRole
+from objects.types import UserRole, OnlineStatus
 from objects.types.store import StoreItemType
 from helpers.store import _iso
 from helpers.tipping_limiter import check_and_increment_tipping_limit
@@ -817,7 +817,10 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
     try:
         table = db.get(f"x{ndcId}", "Users")
         g_table = db.get(table="Users")
-        cursor = table.find({"id": {"$in": uids}})
+        cursor = table.find({
+            "id": {"$in": uids},
+            "onlineStatus": {"$ne": OnlineStatus.OFFLINE}
+        })
         rows_by_id = {row["id"]: row async for row in cursor}
         result = []
         for u in uids:
@@ -847,6 +850,7 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
                         row["extensions"]["__disabledLevel__"] = global_row["extensions"][
                             "__disabledLevel__"
                         ]
+                row["onlineStatus"] = row.get("onlineStatus", OnlineStatus.ONLINE)
 
 
 
