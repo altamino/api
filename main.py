@@ -25,6 +25,7 @@ from routers.turtle import turtle
 from routers.upload_media import upload_media
 from routers.altteam import altteam
 from routers.store import store
+from routers.notification import notification_methods
 
 # app things
 
@@ -56,6 +57,7 @@ app.include_router(moderation_tools, prefix="/api/v1")
 app.include_router(altacm, prefix="/api/v1")
 app.include_router(altteam, prefix="/api/v1")
 app.include_router(store, prefix="/api/v1")
+app.include_router(notification_methods, prefix="/api/v1")
 app.include_router(static_things)
 
 # brotli can break amino libraries, but it's easy to fix

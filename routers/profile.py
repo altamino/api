@@ -11,7 +11,8 @@ from helpers.config import Config
 from helpers.decorators.validauth import validauth_required
 from helpers.adminWS import send_ws_message as send_admin_ws
 from helpers.adminWS import ApiBroadcastType
-from objects.types import OnlineStatus
+from helpers.notification import create_notification
+from objects.types import OnlineStatus, NotificationType
 from helpers.database.redis import get as get_redis
 from helpers.checkins import (
     CHECKIN_COIN_REWARDS,
@@ -676,6 +677,14 @@ async def follow_user(uid: str, request: Request, ndcId: int = 0):
         inited_user["iconFrame"] = await svc.frame_icon(inited_user.get("frameId"))
 
     inviter = User.GetUserInfo(inited_user, triggerUserId=uid, ndcId=ndcId)
+
+    await create_notification(
+        db,
+        ndcId,
+        uid,
+        suid,
+        NotificationType.USER_MEMBERSHIP,
+    )
 
     asyncio.get_event_loop().create_task(
         send_admin_ws(

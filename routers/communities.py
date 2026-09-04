@@ -1929,3 +1929,14 @@ async def tipping(request: Request, ndcId: int = 0):
     db.close()
 
     return Base.Answer({"tipInfo": updated_tip_info}, spent_time=timestamp() - t1)
+
+
+
+
+
+
+
+
+
+
+
