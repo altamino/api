@@ -14,11 +14,11 @@ notification_methods.route_class = CachableRoute
 
 
 
-
+@notification_methods.get("/g/s/notification")
 @notification_methods.get("/x{ndcId}/s/notification")
 async def get_notifications(
     request: Request,
-    ndcId: int,
+    ndcId: int = 0,
     pagingType: str | None = None,
     pageToken: str | None = None,
     start: int = 0,
@@ -97,11 +97,11 @@ async def get_notifications(
         spent_time=timestamp() - t1,
     )
 
-
+@notification_methods.get("/g/s/notice")
 @notification_methods.get("/x{ndcId}/s/notice")
 async def get_notices(
     request: Request,
-    ndcId: int,
+    ndcId: int = 0,
     type: str | None = None,
     status: int | None = None,
     start: int = 0,
@@ -161,9 +161,9 @@ async def get_notices(
         spent_time=timestamp() - t1,
     )
 
-
+@notification_methods.post("/g/s/notification/checked")
 @notification_methods.post("/x{ndcId}/s/notification/checked")
-async def check_notifications(request: Request, ndcId: int):
+async def check_notifications(request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -180,9 +180,9 @@ async def check_notifications(request: Request, ndcId: int):
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
 
-
+@notification_methods.delete("/g/s/notification/{notificationId}")
 @notification_methods.delete("/x{ndcId}/s/notification/{notificationId}")
-async def delete_notification(request: Request, ndcId: int, notificationId: str):
+async def delete_notification(request: Request, notificationId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -199,9 +199,9 @@ async def delete_notification(request: Request, ndcId: int, notificationId: str)
 
     return Base.Answer(spent_time=timestamp() - t1)
 
-
+@notification_methods.delete("/g/s/notification")
 @notification_methods.delete("/x{ndcId}/s/notification")
-async def clear_notifications(request: Request, ndcId: int):
+async def clear_notifications(request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
