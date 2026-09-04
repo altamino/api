@@ -48,6 +48,29 @@ async def get_recommended_blogs(request: Request, ndcId: int):
     return Base.Answer({"blogList": []})
 
 
+
+
+
+@blog_methods.post("/x{ndcId}/s/feed/featured/reorder")
+async def reorder_featured_blogs(request: Request, ndcId: int, body: dict):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    object_id_list = body.get("objectIdList", [])
+    base_time = body.get("timestamp", int(time() * 1000))
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+
+    for index, object_id in enumerate(object_id_list):
+        await table.update_one(
+            {"id": object_id},
+            {"$set": {"featuredTime": base_time - index}},
+        )
+
+    db.close()
+    return Base.Answer(spent_time=timestamp() - t1)
 # fearured
 @blog_methods.get("/x{ndcId}/s/feed/featured")
 async def get_featured_blogs(
@@ -90,7 +113,7 @@ async def get_featured_blogs(
         async for item in table.find(query)
         .skip(start)
         .limit(size)
-        .sort("featuredTime", DESCENDING)
+        .sort([("featuredType", DESCENDING), ("featuredTime", DESCENDING)])
     ]
 
     blogList = [
@@ -119,9 +142,6 @@ async def get_featured_blogs(
         },
         spent_time=timestamp() - t1,
     )
-
-
-# podborka 2
 @blog_methods.get("/x{ndcId}/s/feed/featured-more")
 @blog_methods.get("/g/s/feed/featured-more")
 async def get_featured_more(
@@ -139,23 +159,18 @@ async def get_featured_more(
     table = db.get(f"x{ndcId}", "Blogs")
     current_time = int(time() * 1000)
     query = {
-        "$or": [
-            {
-                "featuredType": 1,
-                "$expr": {
-                    "$gt": [
-                        {
-                            "$add": [
-                                "$featuredTime",
-                                {"$multiply": ["$featuredDuration", 1000]},
-                            ]
-                        },
-                        current_time,
+        "featuredType": 1,
+        "$expr": {
+            "$lte": [
+                {
+                    "$add": [
+                        "$featuredTime",
+                        {"$multiply": ["$featuredDuration", 1000]},
                     ]
                 },
-            },
-            {"featuredType": 2},
-        ]
+                current_time,
+            ]
+        },
     }
 
     blogs = [
@@ -178,12 +193,23 @@ async def get_featured_more(
     return Base.Answer(
         {
             "blogList": blogList,
-            "featuredBlogCategory": "featured",
-            "paging": calculate_page_tokens(start, size, blogList),
+            "featuredBlogCategory": {
+                "categoryId": "featured",
+                "label": "Featured",
+                "content": "",
+                "icon": None,
+                "type": 0,
+                "style": 0,
+                "position": 0,
+                "status": 0,
+                "blogsCount": len(blogList),
+                "createdTime": None,
+                "modifiedTime": None,
+            },
+            "timestamp": str(current_time),
         },
         spent_time=timestamp() - t1,
     )
-
 
 @blog_methods.get("/x{ndcId}/s/feed/blog-all")
 @blog_methods.get("/g/s/feed/blog-all")
@@ -373,6 +399,12 @@ async def get_blog(
 
     blog = await table.find_one({"id": blogId})
     if blog:
+        if blog.get("featuredType") == 1:
+            current_time = int(time() * 1000)
+            expires_at = blog.get("featuredTime", 0) + blog.get("featuredDuration", 0) * 1000
+            if expires_at <= current_time:
+                blog["featuredType"] = 0
+
         blog_info = await Blog.Info(
             blog, db, ndcId=ndcId, trigger_uid=request.state.session.get("uid")
         )
@@ -386,7 +418,6 @@ async def get_blog(
 
     db.close()
     return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
-
 
 # edit blog post
 

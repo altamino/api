@@ -43,6 +43,7 @@ from helpers.decorators.strikecheck import strike_check
 from helpers.functions import calculate_page_tokens, parse_page_token
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Comments, Errors, User, MediaList
+from objects.types import UserRole
 
 profile_methods = APIRouter()
 profile_methods.route_class = CachableRoute
@@ -962,8 +963,6 @@ async def get_wallet_ads_info(request: Request):
         spent_time=timestamp() - t1,
     )
 
-
-
 @profile_methods.post("/x{ndcId}/s/user-profile/{uid}/online-status")
 async def online_status(uid: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
@@ -994,3 +993,129 @@ async def online_status(uid: str, request: Request, ndcId: int = 0):
     return Base.Answer(spent_time=timestamp() - t1)
 
 
+
+@profile_methods.get("/g/s/block")
+async def get_blocked_users(request: Request, start: int = 0, size: int = 25):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+    ndcId = 0
+
+    db = await Database().init()
+    g_table = db.get(table="Users")
+    local_table = db.get("x0", table="Users")
+
+    row = await g_table.find_one({"id": trigger_uid})
+    if row is None:
+        db.close()
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+    blocked_uids = row.get("blockedUidList", [])
+    page = blocked_uids[start:start + size]
+
+    user_profile_list = []
+    online_uids = await _get_online_uids(ndcId) if page else set()
+
+    for uid in page:
+        row2 = await local_table.find_one({"id": uid})
+        if row2 is None:
+            continue
+
+        global_row = await g_table.find_one({"id": uid})
+        if global_row:
+            row2["tagList"] = list(
+                set(global_row.get("tagList", []) + row2.get("tagList", []))
+            )
+
+            row2["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+
+            if "isTeamMember" in global_row:
+                row2["isTeamMember"] = global_row["isTeamMember"]
+
+            if "isVerified" in global_row:
+                row2["isVerified"] = global_row["isVerified"]
+            if global_row.get("status", 0) in [9, 10]:
+                row2["status"] = global_row["status"]
+            if global_row.get("extensions", {}).get("__disabledLevel__"):
+                row2["extensions"]["__disabledLevel__"] = global_row["extensions"][
+                    "__disabledLevel__"
+                ]
+
+            row2 = global_row | row2
+
+        if uid in online_uids:
+            row2["onlineStatus"] = row2.get("onlineStatus", OnlineStatus.ONLINE)
+        else:
+            row2["onlineStatus"] = OnlineStatus.OFFLINE
+
+        async with await StoreService.create(uid, ndcId) as svc:
+            row2["iconFrame"] = await svc.frame_icon(row2.get("frameId"))
+
+        user_profile_list.append(
+            User.GetUserInfo(
+                row2,
+                triggerUserId=trigger_uid,
+                extensions=row2.get("extensions"),
+                ndcId=ndcId,
+            )
+        )
+
+    db.close()
+    return Base.Answer(
+        {"userProfileList": user_profile_list},
+        spent_time=timestamp() - t1,
+    )
+
+@profile_methods.post("/g/s/block/{userId}")
+async def block_user(request: Request, userId: str):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+
+    if userId == trigger_uid:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+    db = await Database().init()
+    table = db.get(table="Users")
+
+    target_row = await table.find_one({"id": userId})
+    if target_row is None:
+        db.close()
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+    target_role = target_row.get("role", 0)
+    if UserRole.is_global_staff(target_role):
+        db.close()
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+
+    await table.update_one(
+        {"id": trigger_uid},
+        {"$addToSet": {"blockedUidList": userId}}
+    )
+
+    db.close()
+    return Base.Answer(spent_time=timestamp() - t1) #idk what app need for answer
+
+
+@profile_methods.delete("/g/s/block/{userId}")
+async def unblock_user(request: Request, userId: str):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+
+    db = await Database().init()
+    table = db.get(table="Users")
+
+    await table.update_one(
+        {"id": trigger_uid},
+        {"$pull": {"blockedUidList": userId}}
+    )
+
+    db.close()
+    return Base.Answer(spent_time=timestamp() - t1) #idk what app need for answer
