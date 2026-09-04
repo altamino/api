@@ -142,6 +142,60 @@ async def get_featured_blogs(
         },
         spent_time=timestamp() - t1,
     )
+
+
+
+
+@blog_methods.get("/x{ndcId}/s/blog-category/{categoryId}/blog-list")
+@blog_methods.get("/g/s/blog-category/{categoryId}/blog-list")
+async def get_blog_category_list(
+    request: Request,
+    categoryId: str,
+    ndcId: int = 0,
+    pageToken: str | None = None,
+    start: int = 0,
+    size: int = 25,
+):
+    t1 = timestamp()
+    size = size if 0 < size < 101 else 25
+    start = parse_page_token(pageToken, start)
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+
+    if categoryId == "featured":
+        query = {"featuredType": {"$in": [1, 2]}}
+        sort_field = "featuredTime"
+    else:
+        query = {"categoryId": categoryId}
+        sort_field = "createdTime"
+
+    blogs = [
+        item
+        async for item in table.find(query)
+        .skip(start)
+        .limit(size)
+        .sort(sort_field, DESCENDING)
+    ]
+
+    blogList = [
+        await Blog.Info(
+            item, db, ndcId=ndcId, trigger_uid=request.state.session.get("uid")
+        )
+        for item in blogs
+    ]
+
+    db.close()
+    return Base.Answer(
+        {
+            "blogList": blogList,
+            "paging": calculate_page_tokens(start, size, blogList),
+        },
+        spent_time=timestamp() - t1,
+    )
+
+
+
 @blog_methods.get("/x{ndcId}/s/feed/featured-more")
 @blog_methods.get("/g/s/feed/featured-more")
 async def get_featured_more(
