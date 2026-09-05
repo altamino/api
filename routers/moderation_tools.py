@@ -258,7 +258,9 @@ async def admin_action(
     table = db.get(f"x{ndcId}", table_name)
     history = db.get(f"x{ndcId}", "ModerationHistory")
 
-    if table_name == "Users":
+    print(f"Admin action: {object_type} ({table_name}) - {operation} - {value}")
+
+    if table_name == "Users" and operation != 114:
         badgeColor = "default"
         if operation == 18:
             badgeColor = "danger"

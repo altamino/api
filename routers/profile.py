@@ -244,6 +244,35 @@ async def reminder_configs(
         spent_time=timestamp() - t1,
     )
 
+@profile_methods.get("/x{ndcId}/s/check-in/stats/{userId}")
+async def check_in_stats(
+    request: Request,
+    ndcId: int,
+    userId: str,
+    timezone: int = 0,
+):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", table="Users")
+    row = await table.find_one({"id": userId})
+    db.close()
+
+    if row is None:
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+    history = row.get("checkInHistory", {}) or {}
+    today = local_date(timezone)
+
+    return Base.Answer(
+        {
+            "consecutiveCheckInDays": compute_streak(history, today),
+            "brokenStreaks": compute_broken_streaks(history, row, today),
+        },
+        spent_time=timestamp() - t1,
+    )
 
 @profile_methods.get("/x{ndcId}/s/check-in/history")
 async def check_in_history(
@@ -720,6 +749,104 @@ async def unfollow_user(uid: str, request: Request, ndcId: int = 0):
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
 
+
+
+async def _get_push_settings_table(db, ndcId: int):
+    if ndcId == 0:
+        return db.get(table="Users")
+    return db.get(f"x{ndcId}", table="Users")
+
+
+@profile_methods.get("/x{ndcId}/s/user-profile/push")
+@profile_methods.get("/g/s/user-profile/push")
+async def get_user_profile_push(request: Request, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+
+    db = await Database().init()
+    table = await _get_push_settings_table(db, ndcId)
+
+    row = await table.find_one({"id": trigger_uid})
+    if row is None:
+        db.close()
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+    push_settings = row.get("pushSettings", {})
+    db.close()
+
+    return Base.Answer(
+        {
+            "pushEnabled": push_settings.get("pushEnabled", True),
+            "pushExtensions": {
+                "communityActivitiesEnabled": push_settings.get(
+                    "pushExtensions", {}
+                ).get("communityActivitiesEnabled", True),
+                "communityBroadcastsEnabled": push_settings.get(
+                    "pushExtensions", {}
+                ).get("communityBroadcastsEnabled", True),
+            },
+        },
+        spent_time=timestamp() - t1,
+    )
+
+
+@profile_methods.post("/x{ndcId}/s/user-profile/push")
+@profile_methods.post("/g/s/user-profile/push")
+async def set_user_profile_push(request: Request, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+
+    body = await request.json()
+    push_enabled = bool(body.get("pushEnabled", True))
+    push_extensions_in = body.get("pushExtensions") or {}
+
+    push_extensions = {
+        "communityActivitiesEnabled": bool(
+            push_extensions_in.get("communityActivitiesEnabled", True)
+        ),
+        "communityBroadcastsEnabled": bool(
+            push_extensions_in.get("communityBroadcastsEnabled", True)
+        ),
+    }
+
+    db = await Database().init()
+    table = await _get_push_settings_table(db, ndcId)
+
+    row = await table.find_one({"id": trigger_uid})
+    if row is None:
+        db.close()
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+    push_settings = {
+        "pushEnabled": push_enabled,
+        "pushExtensions": push_extensions,
+    }
+
+    await table.update_one(
+        {"id": trigger_uid},
+        {"$set": {"pushSettings": push_settings}},
+    )
+
+    db.close()
+
+    return Base.Answer(
+        {
+            "pushEnabled": push_enabled,
+            "pushExtensions": push_extensions,
+        },
+        spent_time=timestamp() - t1,
+    )
+
+
+
+
+
 async def _get_online_uids(ndcId: int) -> list[str]:
     redis = get_redis()
     pattern = f"x{ndcId}:online:*"
@@ -728,6 +855,7 @@ async def _get_online_uids(ndcId: int) -> list[str]:
         # key format is x{ndcId}:online:{uid}
         uids.append(key.split(":")[-1])
     return uids
+
 
 @profile_methods.get("/g/s/user-profile/{uid}")
 @profile_methods.get("/x{ndcId}/s/user-profile/{uid}")
@@ -1003,8 +1131,58 @@ async def online_status(uid: str, request: Request, ndcId: int = 0):
 
 
 
+
+async def _get_block_lists(table, trigger_uid: str) -> dict:
+    row = await table.find_one({"id": trigger_uid})
+    blocked_uid_list = row.get("blockedUidList", []) if row else []
+
+    blocker_uid_list = [
+        r["id"]
+        async for r in table.find(
+            {"blockedUidList": trigger_uid},
+            {"id": 1},
+        )
+    ]
+
+    return {
+        "blockedUidList": blocked_uid_list,
+        "blockerUidList": blocker_uid_list,
+    }
+
+
+
+@profile_methods.get("/x{ndcId}/s/block/full-list")
+@profile_methods.get("/g/s/block/full-list")
+async def get_block_full_list(request: Request, start: int = 0, size: int = 25, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+    ndcId = 0
+
+    db = await Database().init()
+    table = db.get(table="Users")
+
+    row = await table.find_one({"id": trigger_uid})
+    if row is None:
+        db.close()
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+    result = await _get_block_lists(table, trigger_uid)
+    db.close()
+
+    result = {
+        "blockedUidList": result["blockedUidList"][start:start + size],
+        "blockerUidList": result["blockerUidList"][start:start + size],
+    }
+
+    return Base.Answer(result, spent_time=timestamp() - t1)
+
+
+@profile_methods.get("/x{ndcId}/s/block")
 @profile_methods.get("/g/s/block")
-async def get_blocked_users(request: Request, start: int = 0, size: int = 25):
+async def get_blocked_users(request: Request, start: int = 0, size: int = 25, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -1077,8 +1255,9 @@ async def get_blocked_users(request: Request, start: int = 0, size: int = 25):
         spent_time=timestamp() - t1,
     )
 
+@profile_methods.post("/x{ndcId}/s/block/{userId}")
 @profile_methods.post("/g/s/block/{userId}")
-async def block_user(request: Request, userId: str):
+async def block_user(request: Request, userId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -1106,12 +1285,14 @@ async def block_user(request: Request, userId: str):
         {"$addToSet": {"blockedUidList": userId}}
     )
 
+    result = await _get_block_lists(table, trigger_uid)
     db.close()
-    return Base.Answer(spent_time=timestamp() - t1) #idk what app need for answer
+    return Base.Answer(result, spent_time=timestamp() - t1)
 
 
+@profile_methods.delete("/x{ndcId}/s/block/{userId}")
 @profile_methods.delete("/g/s/block/{userId}")
-async def unblock_user(request: Request, userId: str):
+async def unblock_user(request: Request, userId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -1126,5 +1307,6 @@ async def unblock_user(request: Request, userId: str):
         {"$pull": {"blockedUidList": userId}}
     )
 
+    result = await _get_block_lists(table, trigger_uid)
     db.close()
-    return Base.Answer(spent_time=timestamp() - t1) #idk what app need for answer
+    return Base.Answer(result, spent_time=timestamp() - t1)

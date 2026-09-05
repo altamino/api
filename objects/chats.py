@@ -338,6 +338,7 @@ class Chat:
             "latestActivityTime": message["createdTime"],
             "author": User.GetUserInfo(host_xndcId, ndcId=ndcId),
             "extensions": {
+                "featuredType": data.get("featuredType", 0),
                 "viewOnly": data.get("isViewMode", False),
                 "coHost": data["cohostsIds"],
                 "language": "en",

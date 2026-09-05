@@ -32,11 +32,6 @@ async def newusercoupon_mock(request: Request):
     return Base.Answer({"couponMappingList": []})
 
 
-@mock.get("/g/s/block/full-list")
-async def blockedandblocker_mock(request: Request, size: int = 1, language: str = "en"):
-    return Base.Answer({"blockedUidList": [], "blockerUidList": []})
-
-
 @mock.get("/g/s/account/{userId}/mission-set")
 async def mission_set_mock(request: Request):
     return Base.Answer(

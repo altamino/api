@@ -136,6 +136,7 @@ class User:
             ),  # [TODO] when communitues will be implemented do that
             "backgroundColor": row.get("backgroundColor"),
             "extensions": {
+                "featuredType": row.get("featuredType", 0),
                 "tagList": row.get("tagList", []),
                 "customTitles": row.get("titles", []),
                 "backgroundColor": row.get("backgroundColor"),
@@ -229,6 +230,7 @@ class User:
                 0 if ndcId else 0
             ),  # [TODO] when communitues will be implemented do that
             "extensions": {
+                "featuredType": row.get("featuredType", 0),
                 "tagList": row.get("tagList", []),
                 "isMemberOfTeamAmino": row.get("isTeamMember", False),
                 "customTitles": row.get("titles", []),
@@ -325,6 +327,7 @@ class User:
                 0 if ndcId else 0
             ),  # [TODO] when communitues will be implemented do that
             "extensions": {
+                "featuredType": row.get("featuredType", 0),
                 "tagList": row.get("tagList", []),
                 "isMemberOfTeamAmino": row.get("isTeamMember", False),
                 "customTitles": row.get("titles", []),

@@ -547,7 +547,6 @@ async def get_community_guidelines(request: Request, ndcId: int = 0):
     finally:
         db.close()
 
-
 @communities.get("/x{ndcId}/s/user-profile")
 async def get_community_profiles(
     ndcId: int,
@@ -556,14 +555,6 @@ async def get_community_profiles(
     size: int = 25,
     type: str = "",
 ):
-    if type == "featured":
-        return Base.Answer(
-            {
-                "userProfileCount": 0,
-                "userProfileList": [],
-            },
-        )
-
     t1 = timestamp()
     size = size if 0 < size < 101 else 25
 
@@ -572,13 +563,31 @@ async def get_community_profiles(
         "curators": {"role": 101},
         "recent": {"status": {"$nin": [9, 10, 5]}},
         "summary": {"status": {"$nin": [9, 10, 5]}},  # banned, deleted, leaved
+        "featured": 
+            {
+                "featuredType": 4,
+                "$expr": {
+                    "$gt": [
+                        {
+                            "$add": [
+                                "$featuredTime",
+                                {"$multiply": ["$featuredDuration", 1000]},
+                            ]
+                        },
+                        int(t1 * 1000),
+                    ]
+                },
+            }
+        
     }
 
     query = queries.get(type)
     if query is None:
         return Errors.InvalidRequest()
 
-    if type in ("recent", "summary"):
+    if type == "featured":
+        sort_order = [("featuredType", DESCENDING), ("featuredTime", DESCENDING)]
+    elif type in ("recent", "summary"):
         sort_order = [("createdTime", DESCENDING)]
     else:
         sort_order = [("role", DESCENDING), ("createdTime", DESCENDING)]
@@ -591,9 +600,6 @@ async def get_community_profiles(
         items = []
         total = await table.count_documents(query)
 
-
-
-        
         async for item in table.find(query).skip(start).limit(size).sort(sort_order):
             async with await StoreService.create(item["id"], ndcId) as svc:
                 item["iconFrame"] = await svc.frame_icon(item.get("frameId"))
@@ -618,7 +624,6 @@ async def get_community_profiles(
                     item["extensions"]["__disabledLevel__"] = global_row["extensions"][
                         "__disabledLevel__"
                     ]
-
 
             items.append(
                 User.OwnNonSensetiveProfile(item, ndcId=ndcId, membershipStatus=1)

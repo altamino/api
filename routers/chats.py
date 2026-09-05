@@ -74,7 +74,6 @@ LiveCategory:
 
 """
 
-
 @chats.get("/x{ndcId}/s/live-layer/speed-dial-public")
 async def get_live_layer_chats(
     request: Request,
@@ -88,24 +87,52 @@ async def get_live_layer_chats(
     size = size if 0 < size < 101 else 25
     start = parse_page_token(pageToken, start)
 
-    normalLiveCategoryList = []
-    liveChatThreadList = []
-    featuredChatThreadList = []
-
     db = await Database().init()
-    db.get(f"x{ndcId}", "Chats")
+    try:
+        table = db.get(f"x{ndcId}", "Chats")
 
-    db.close()
+        featured_query = {
+                "featuredType": 5,
+                "$expr": {
+                    "$gt": [
+                        {
+                            "$add": [
+                                "$featuredTime",
+                                {"$multiply": ["$featuredDuration", 1000]},
+                            ]
+                        },
+                        int(t1 * 1000),
+                    ]
+                },
+            }
+
+        featured_chats = [
+            item
+            async for item in table.find(featured_query)
+            .sort([("featuredType", DESCENDING), ("featuredTime", DESCENDING)])
+            .limit(size)
+        ]
+
+        trigger_uid = request.state.session.get("uid")
+        featuredChatThreadList = [
+            c for c in [
+                await Chat.Info(item["id"], trigger_uid=trigger_uid, connection=db, ndcId=ndcId)
+                for item in featured_chats
+            ]
+            if c is not None
+        ]
+    finally:
+        db.close()
+
     return Base.Answer(
         {
-            "featuredChatThreadList": featuredChatThreadList,
-            "liveChatThreadList": liveChatThreadList,
-            "normalLiveCategoryList": normalLiveCategoryList,
+            "threadList": featuredChatThreadList,
+            "liveLayerList": [],
+            "playlistInThreadList": {},
+            "userProfileListInThreadList": {},
         },
         spent_time=timestamp() - t1,
     )
-
-
 
 async def _get_chatting_chat_ids(ndcId: int) -> list[str]:
     redis = get_redis()
