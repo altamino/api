@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta, UTC
 from uuid import uuid4
 import asyncio
 
+from helpers.checkins import compute_streak, local_date, get_tz
 from helpers.aioyaml import aioyaml
 from helpers.database.models import dttmn
 from helpers.database.mongo import Database
@@ -2017,3 +2018,70 @@ async def tipping(request: Request, ndcId: int = 0):
 
 
 
+
+
+@communities.get("/g/s-x{ndcId}/community/leaderboard")
+@communities.get("/x{ndcId}/s/community/leaderboard")
+async def get_leaderboard(
+    request: Request,
+    ndcId: int = 0,
+    rankingType: int = 1,
+    pageToken: str | None = None,
+    start: int = 0,
+    size: int = 20,
+):
+    t1 = timestamp()
+    size = size if 0 < size < 101 else 20
+    start = parse_page_token(pageToken, start)
+    trigger_uid = request.state.session.get("uid")
+
+    db = await Database().init()
+    users_table = db.get(f"x{ndcId}", "Users")
+
+    if rankingType == 4:
+        # consecutiveCheckInDays не хранится — считаем на лету
+        tz = await get_tz(request)
+        today = local_date(tz)
+
+        all_users = [
+            u async for u in users_table.find({"checkInHistory": {"$exists": True, "$ne": {}}})
+        ]
+        for u in all_users:
+            u["_streak"] = compute_streak(u.get("checkInHistory", {}) or {}, today)
+
+        all_users = [u for u in all_users if u["_streak"] > 0]
+        all_users.sort(key=lambda u: u["_streak"], reverse=True)
+        users = all_users[start:start + size]
+    else:
+        sort_field_map = {
+            1: "minutesPerDay",
+            2: "minutesPerWeek",
+            3: "reputation",
+            5: "totalQuizHighestScore",
+        }
+        sort_field = sort_field_map.get(rankingType, "minutesPerDay")
+
+        query = {sort_field: {"$gt": 0}}
+        users = [
+            item
+            async for item in users_table.find(query)
+            .skip(start)
+            .limit(size)
+            .sort(sort_field, DESCENDING)
+        ]
+
+    user_list = []
+    for item in users:
+        async with await StoreService.create(item["id"], ndcId) as svc:
+            item["iconFrame"] = await svc.frame_icon(item.get("frameId"))
+
+        user_list.append(User.GetUserInfo(item, ndcId=ndcId, triggerUserId=trigger_uid))
+
+    db.close()
+    return Base.Answer(
+        {
+            "userProfileList": user_list,
+            "paging": calculate_page_tokens(start, size, user_list),
+        },
+        spent_time=timestamp() - t1,
+    )

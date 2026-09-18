@@ -1,6 +1,6 @@
 from hashlib import sha256
 from typing import Union
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from helpers.database.mongo import Database
 from helpers.checkins import date_str
@@ -42,7 +42,7 @@ MODULE_DEFAULTS = {
     "post": True,
     "chat": True,
     "ranking": True,
-    "leaderboard": False,
+    "leaderboard": True,
     "featured": True,
     "catalog": True,
     "sharedFolder": False,
@@ -270,8 +270,30 @@ ACTIVITY_WINDOW_DAYS = 7
 ACTIVE_TIME_THRESHOLD_SECONDS = 300
 
 
+EXPECTED_BASE = 0.92 
+EXPECTED_DECAY = 0.265 
+EXPECTED_MIN = 0.05 
+EXPECTED_MAX = 0.60 
+
+def _expected_active_ratio(total: int) -> float:
+    raw = EXPECTED_BASE * (total ** -EXPECTED_DECAY)
+    return max(EXPECTED_MIN, min(EXPECTED_MAX, raw))
+
+
+HEAT_AT_EXPECTED = 0.70
+OVERPERFORM_CAP = 2.5
+MIN_MEMBERS_FULL_TRUST = 8
+
+def _ratio_to_heat(ratio: float, expected: float) -> float:
+    r = ratio / expected
+    if r <= 1.0:
+        return HEAT_AT_EXPECTED * r
+    over = (r - 1.0) / (OVERPERFORM_CAP - 1.0)
+    return HEAT_AT_EXPECTED + (1.0 - HEAT_AT_EXPECTED) * min(over, 1.0)
+
+
 async def _compute_community_heat(table, tz_offset_days: int = 0) -> float:
-    now_local = datetime.utcnow()
+    now_local = datetime.now(timezone.utc) + timedelta(days=tz_offset_days)
     recent_days = [
         date_str(now_local - timedelta(days=i)) for i in range(ACTIVITY_WINDOW_DAYS)
     ]
@@ -315,10 +337,18 @@ async def _compute_community_heat(table, tz_offset_days: int = 0) -> float:
 
     result = await table.aggregate(pipeline).to_list(length=1)
     active_count = result[0]["activeCount"] if result else 0
+    if active_count == 0:
+        return 0.0
 
-    heat = active_count / total_valid
-    return round(min(heat, 1.0), 2)
+    ratio = active_count / total_valid
+    expected = _expected_active_ratio(total_valid)
+    heat = _ratio_to_heat(ratio, expected)
 
+    # мелкие соо: 2 из 3 не должны давать максимум — нет статистики
+    if total_valid < MIN_MEMBERS_FULL_TRUST:
+        heat *= total_valid / MIN_MEMBERS_FULL_TRUST
+
+    return round(max(0.0, min(heat, 1.0)), 2)
 
 class Communities:
     @staticmethod
@@ -369,6 +399,7 @@ class Communities:
         image_mod = mods.get("image", {})
         question_mod = mods.get("question", {})
         catalog_mod = mods.get("catalog", {})
+        quiz_mod = mods.get("quiz", {})
 
         av = chat_mod.get("avChat", {}) if isinstance(chat_mod, dict) else {}
 
@@ -427,6 +458,7 @@ class Communities:
                             "image": Communities.ModuleInfo(image_mod),
                             "question": Communities.ModuleInfo(question_mod),
                             "catalogEntry": Communities.ModuleInfo(catalog_mod),
+                            "quiz": Communities.ModuleInfo(quiz_mod),
                         },
                     },
                     "chat": {

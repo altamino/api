@@ -728,6 +728,7 @@ async def post_blog(request: Request, ndcId: int = 0):
         BlogType.Question,
         BlogType.Vote,
         BlogType.Wiki,
+        BlogType.Quiz
     ]:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
@@ -780,6 +781,7 @@ async def post_blog(request: Request, ndcId: int = 0):
     if "polloptList" in data:
         blog_data["pollOptions"] = [
             {
+                "polloptId": str(uuid4()),
                 "type": 0,
                 "status": 0,
                 "title": item["title"],
@@ -800,6 +802,36 @@ async def post_blog(request: Request, ndcId: int = 0):
             }
             for item in extensions["props"]
         ]
+
+    if blog_type == BlogType.Quiz and "quizQuestionList" in data:
+        quiz_questions = []
+        for q in data["quizQuestionList"]:
+            q_id = str(uuid4())
+            opt_list = []
+            for opt in q.get("extensions", {}).get("quizQuestionOptList", []):
+                opt_list.append({
+                    "optId": str(uuid4()),
+                    "title": opt["title"],
+                    "mediaList": MediaList.List(opt.get("mediaList", [])),
+                    "isCorrect": bool(opt.get("isCorrect", False)),
+                })
+            quiz_questions.append({
+                "quizQuestionId": q_id,
+                "title": q.get("title", ""),
+                "mediaList": MediaList.List(q.get("mediaList", [])),
+                "parentId": blogId,
+                "parentType": 1,
+                "extensions": {
+                    "quizAnswerExplanation": q.get("extensions", {}).get("quizAnswerExplanation", ""),
+                    "quizQuestionOptList": opt_list,
+                },
+            })
+        blog_data["quizQuestionList"] = quiz_questions
+        blog_data["extensions"]["quizTotalQuestionCount"] = len(quiz_questions)
+        blog_data["quizPlayedTimes"] = 0
+        blog_data["quizResults"] = {}
+
+
     table = db.get(f"x{ndcId}", "Blogs")
     await table.insert_one(blog_data)
 
@@ -1016,3 +1048,401 @@ async def get_blog_poll_voters(
     db.close()
     return Base.Answer({"userProfileList": voters_list}, spent_time=timestamp() - t1)
 
+
+
+
+
+@blog_methods.post("/g/s/blog/{blogId}/quiz/result")
+@blog_methods.post("/x{ndcId}/s/blog/{blogId}/quiz/result")
+async def submit_quiz_result(request: Request, blogId: str, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+    data = await request.json()
+    mode = data.get("mode", 0)  # 0 = normal, 1 = hell
+    answer_list = data.get("quizAnswerList", [])
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+    blog = await table.find_one({"id": blogId})
+    if not blog or blog.get("blogType") != BlogType.Quiz:
+        db.close()
+        return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+
+    questions = {q["quizQuestionId"]: q for q in blog.get("quizQuestionList", [])}
+    total_questions = len(questions)
+    correct_count = 0
+
+    for answer in answer_list:
+        q = questions.get(answer.get("quizQuestionId"))
+        if not q:
+            continue
+        opt_ids = set(answer.get("optIdList", []))
+        opts = {o["optId"]: o for o in q.get("extensions", {}).get("quizQuestionOptList", [])}
+        correct_ids = {oid for oid, o in opts.items() if o.get("isCorrect")}
+        if opt_ids and opt_ids == correct_ids:
+            correct_count += 1
+
+    score = round(correct_count / total_questions * 100) if total_questions else 0
+    is_finished = total_questions > 0 and correct_count == total_questions
+
+    quiz_results = blog.get("quizResults", {})
+    user_result = quiz_results.get(trigger_uid, {
+        "normal": {"totalTimes": 0, "highestScore": 0, "isFinished": False},
+        "hell": {"totalTimes": 0, "highestScore": 0, "isFinished": False},
+    })
+    mode_key = "hell" if mode == 1 else "normal"
+    mode_result = user_result[mode_key]
+    mode_result["totalTimes"] += 1
+    mode_result["latestScore"] = score
+    mode_result["highestScore"] = max(score, mode_result.get("highestScore", 0))
+    mode_result["isFinished"] = mode_result.get("isFinished", False) or is_finished
+    user_result[mode_key] = mode_result
+    quiz_results[trigger_uid] = user_result
+
+    await table.update_one(
+        {"id": blogId},
+        {
+            "$set": {f"quizResults.{trigger_uid}": user_result},
+            "$inc": {"quizPlayedTimes": 1},
+        },
+    )
+
+    all_scores = [
+        v.get(mode_key, {}).get("latestScore", 0)
+        for v in quiz_results.values()
+        if mode_key in v
+    ]
+    beat_rate = (
+        sum(1 for s in all_scores if s < score) / len(all_scores)
+        if len(all_scores) > 1 else 1.0
+    )
+
+    result = {
+        "highestMode": mode,
+        "highestScore": mode_result["highestScore"],
+        "latestMode": mode,
+        "latestScore": score,
+        "totalTimes": mode_result["totalTimes"],
+        "isFinished": mode_result["isFinished"],
+        "hellIsFinished": user_result["hell"]["isFinished"],
+        "beatRate": beat_rate,
+        "lastBeatRate": beat_rate,
+    }
+
+    db.close()
+    return Base.Answer({"quizResult": result}, spent_time=timestamp() - t1)
+
+
+@blog_methods.get("/g/s/blog/{blogId}/quiz/result")
+@blog_methods.get("/x{ndcId}/s/blog/{blogId}/quiz/result")
+async def get_quiz_result_ranking(
+    request: Request,
+    blogId: str,
+    ndcId: int = 0,
+    pageToken: str | None = None,
+    start: int = 0,
+    size: int = 25,
+):
+    t1 = timestamp()
+    size = size if 0 < size < 101 else 25
+    start = parse_page_token(pageToken, start)
+    trigger_uid = request.state.session.get("uid")
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+    blog = await table.find_one({"id": blogId})
+    if not blog or blog.get("blogType") != BlogType.Quiz:
+        db.close()
+        return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+
+    quiz_results = blog.get("quizResults", {})
+
+    ranking_entries = sorted(
+        quiz_results.items(),
+        key=lambda kv: kv[1].get("normal", {}).get("highestScore", 0),
+        reverse=True,
+    )
+    page = ranking_entries[start:start + size]
+
+    users_table = db.get(f"x{ndcId}", "Users")
+    ranking_list = []
+    for uid, res in page:
+        user_row = await users_table.find_one({"id": uid})
+        if not user_row:
+            continue
+        author_info = User.GetUserInfo(user_row, ndcId=ndcId, triggerUserId=trigger_uid)
+        normal = res.get("normal", {})
+        hell = res.get("hell", {})
+        ranking_list.append({
+            "author": author_info,
+            "quizResult": {
+                "highestMode": 0,
+                "highestScore": normal.get("highestScore", 0),
+                "latestMode": 0,
+                "latestScore": normal.get("latestScore", 0),
+                "totalTimes": normal.get("totalTimes", 0),
+                "isFinished": normal.get("isFinished", False),
+                "hellIsFinished": hell.get("isFinished", False),
+                "beatRate": 0.0,
+                "lastBeatRate": 0.0,
+            },
+            "highestMode": 0,
+            "highestScore": normal.get("highestScore", 0),
+            "latestMode": 0,
+            "latestScore": normal.get("latestScore", 0),
+            "isFinished": normal.get("isFinished", False),
+            "hellIsFinished": hell.get("isFinished", False),
+            "beatRate": 0.0,
+        })
+
+    current_user_result = None
+    if trigger_uid and trigger_uid in quiz_results:
+        normal = quiz_results[trigger_uid].get("normal", {})
+        hell = quiz_results[trigger_uid].get("hell", {})
+        current_user_result = {
+            "highestMode": 0,
+            "highestScore": normal.get("highestScore", 0),
+            "latestMode": 0,
+            "latestScore": normal.get("latestScore", 0),
+            "totalTimes": normal.get("totalTimes", 0),
+            "isFinished": normal.get("isFinished", False),
+            "hellIsFinished": hell.get("isFinished", False),
+            "beatRate": 0.0,
+            "lastBeatRate": 0.0,
+        }
+
+    db.close()
+    return Base.Answer(
+        {
+            "quizInBestQuizzes": blog.get("extensions", {}).get("quizInBestQuizzes", False),
+            "quizPlayedTimes": blog.get("quizPlayedTimes", 0),
+            "quizResultOfCurrentUser": current_user_result,
+            "quizResultRankingList": ranking_list,
+            "paging": calculate_page_tokens(start, size, ranking_list),
+        },
+        spent_time=timestamp() - t1,
+    )
+
+
+
+
+#feeds
+
+@blog_methods.get("/g/s/feed/quiz-best-quizzes")
+@blog_methods.get("/x{ndcId}/s/feed/quiz-best-quizzes")
+async def get_quiz_best(
+    request: Request,
+    ndcId: int = 0,
+    pageToken: str | None = None,
+    start: int = 0,
+    size: int = 25,
+):
+    t1 = timestamp()
+    size = size if 0 < size < 101 else 25
+    start = parse_page_token(pageToken, start)
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+
+    blogs = [
+        item
+        async for item in table.find(
+            {"blogType": BlogType.Quiz, "extensions.quizInBestQuizzes": True}
+        )
+        .skip(start)
+        .limit(size)
+        .sort("quizPlayedTimes", DESCENDING)
+    ]
+
+    blogList = [
+        await Blog.Info(
+            item, db, ndcId=ndcId, trigger_uid=request.state.session.get("uid")
+        )
+        for item in blogs
+    ]
+
+    db.close()
+    return Base.Answer(
+        {
+            "blogList": blogList,
+            "paging": calculate_page_tokens(start, size, blogList),
+        },
+        spent_time=timestamp() - t1,
+    )
+
+
+@blog_methods.get("/g/s/feed/quiz-trending")
+@blog_methods.get("/x{ndcId}/s/feed/quiz-trending")
+async def get_quiz_trending(
+    request: Request,
+    ndcId: int = 0,
+    pageToken: str | None = None,
+    start: int = 0,
+    size: int = 25,
+):
+    t1 = timestamp()
+    size = size if 0 < size < 101 else 25
+    start = parse_page_token(pageToken, start)
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+
+    blogs = [
+        item
+        async for item in table.find({"blogType": BlogType.Quiz})
+        .skip(start)
+        .limit(size)
+        .sort("createdTime", DESCENDING)
+    ]
+
+    blogList = [
+        await Blog.Info(
+            item, db, ndcId=ndcId, trigger_uid=request.state.session.get("uid")
+        )
+        for item in blogs
+    ]
+
+    db.close()
+    return Base.Answer(
+        {
+            "blogList": blogList,
+            "paging": calculate_page_tokens(start, size, blogList),
+        },
+        spent_time=timestamp() - t1,
+    )
+
+
+
+
+
+
+#poll
+
+
+
+@blog_methods.post("/g/s/blog/{blogId}/poll/option/{optionId}/vote")
+@blog_methods.post("/x{ndcId}/s/blog/{blogId}/poll/option/{optionId}/vote")
+async def vote_poll_option(request: Request, blogId: str, optionId: str, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    value = data.get("value", 1)
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+    blog = await table.find_one({"id": blogId})
+    if not blog or "pollOptions" not in blog:
+        db.close()
+        return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+
+    options = blog.get("pollOptions", [])
+    target = next((o for o in options if o.get("polloptId") == optionId), None)
+    if target is None:
+        db.close()
+        return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+
+    if value > 0:
+        for opt in options:
+            if trigger_uid in opt.get("voted", []):
+                opt["voted"].remove(trigger_uid)
+        if trigger_uid not in target["voted"]:
+            target["voted"].append(trigger_uid)
+    else:
+        if trigger_uid in target.get("voted", []):
+            target["voted"].remove(trigger_uid)
+
+    await table.update_one({"id": blogId}, {"$set": {"pollOptions": options}})
+
+    updated_blog = await table.find_one({"id": blogId})
+    blog_info = await Blog.Info(updated_blog, db, ndcId=ndcId, trigger_uid=trigger_uid)
+    db.close()
+
+    return Base.Answer({"blog": blog_info}, spent_time=timestamp() - t1)
+
+
+
+
+
+@blog_methods.post("/g/s/blog/{blogId}/poll/option")
+@blog_methods.post("/x{ndcId}/s/blog/{blogId}/poll/option")
+async def add_poll_option(request: Request, blogId: str, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    trigger_uid = request.state.session["uid"]
+    data = await request.json()
+    title = data.get("title")
+    if not title:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+    blog = await table.find_one({"id": blogId})
+    if not blog:
+        db.close()
+        return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+
+    new_option = {
+        "polloptId": str(uuid4()),
+        "type": data.get("type", 0),
+        "status": 0,
+        "title": title,
+        "mediaList": MediaList.List(data.get("mediaList", [])),
+        "voted": [trigger_uid],
+    }
+
+    await table.update_one(
+        {"id": blogId},
+        {"$push": {"pollOptions": new_option}},
+    )
+
+    updated_blog = await table.find_one({"id": blogId})
+    blog_info = await Blog.Info(updated_blog, db, ndcId=ndcId, trigger_uid=trigger_uid)
+    db.close()
+
+    return Base.Answer({"blog": blog_info}, spent_time=timestamp() - t1)
+
+
+@blog_methods.get("/g/s/blog/{blogId}/poll/options-joined")
+@blog_methods.get("/x{ndcId}/s/blog/{blogId}/poll/options-joined")
+async def get_poll_options_joined(
+    request: Request,
+    blogId: str,
+    ndcId: int = 0,
+    start: int = 0,
+    size: int = 25,
+):
+    t1 = timestamp()
+    trigger_uid = request.state.session.get("uid")
+
+    db = await Database().init()
+    table = db.get(f"x{ndcId}", "Blogs")
+    blog = await table.find_one({"id": blogId})
+    if not blog:
+        db.close()
+        return Base.Answer({"polloptList": []}, spent_time=timestamp() - t1)
+
+    options = blog.get("pollOptions", [])
+    joined = [o for o in options if trigger_uid in o.get("voted", [])]
+    page = joined[start:start + size]
+
+    polopt_list = [Blog.PollOption(o, trigger_uid) for o in page]
+
+    db.close()
+    return Base.Answer(
+        {
+            "polloptList": polopt_list,
+            "paging": calculate_page_tokens(start, size, polopt_list),
+        },
+        spent_time=timestamp() - t1,
+    )
