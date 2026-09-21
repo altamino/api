@@ -131,7 +131,7 @@ class Chat:
                 xndc_data["extensions"]["__disabledLevel__"] = global_row["extensions"][
                     "__disabledLevel__"
                 ]
-            row2 = global_row.get("isBot", False)
+            xndc_data["isBot"] = global_row.get("isBot", False)
 
 
 

@@ -892,7 +892,7 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
             row2["extensions"]["__disabledLevel__"] = global_row["extensions"][
                 "__disabledLevel__"
             ]
-        row2 = global_row.get("isBot", False)
+        row2["isBot"] = global_row.get("isBot", False)
 
         if ndcId == 0:
             row2 = global_row | row2

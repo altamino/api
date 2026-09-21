@@ -147,6 +147,7 @@ async def _get_chatting_chat_ids(ndcId: int) -> list[str]:
             chat_ids.append(parts[2])
     return chat_ids
 
+
 @chats.get("/g/s/live-layer/public-chats")
 @chats.get("/x{ndcId}/s/live-layer/public-chats")
 async def live_layer_public_chats(
@@ -159,17 +160,25 @@ async def live_layer_public_chats(
     trigger_uid = request.state.session.get("uid")
     con = await Database().init()
 
-    chat_ids = await _get_chatting_chat_ids(ndcId)
-    page_ids = chat_ids[start : start + size]
+    try:
+        chat_ids = await _get_chatting_chat_ids(ndcId)
+        page_ids = chat_ids[start : start + size]
 
-    chats = [
-        await Chat.Info(chatId, trigger_uid=trigger_uid, connection=con)
-        for chatId in page_ids
-    ]
-    answer = {"threadList": [c for c in chats if c is not None]}
-    con.close()
+        chats = [
+            await Chat.Info(chatId, trigger_uid=trigger_uid, connection=con)
+            for chatId in page_ids
+        ]
+        
+        answer = {
+            "threadList": [
+                c for c in chats 
+                if c is not None and c.get("type") == ChatType.Public
+            ]
+        }
+    finally:
+        con.close()
+
     return Base.Answer(answer, spent_time=timestamp() - t1)
-
 
 
 
@@ -1295,7 +1304,7 @@ async def get_message(request: Request, chatId: str, messageId: str, ndcId: int 
     xndc_users = db.get(f"x{ndcId}", "Users")
 
     user = await xndc_users.find_one({"id": message_data["authorId"]}) or {}
-    
+
 
     globalBubbleId = user.get("bubbleId")
     chatBubbleId = user.get("chatBubbles", {}).get(chatId)
