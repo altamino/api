@@ -25,6 +25,7 @@ def load_service_account():
 
 
 ACCOUNT = load_service_account()
+print(ACCOUNT)
 AUTH_SCOPES = ["https://www.googleapis.com/auth/firebase.messaging"]
 
 

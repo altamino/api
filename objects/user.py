@@ -118,6 +118,7 @@ class User:
             "accountMembershipStatus": int(row.get("isPaidSubscriber", 0)),
             "ndcId": ndcId,  # 0 is global
             "isGlobal": ndcId == 0,
+            "isBot": row.get("isBot", False),
             "reputation": 0
             if ndcId == 0
             else row.get("reputation", 0),  # if ndcId == 0 else row["reputation"],
@@ -215,6 +216,7 @@ class User:
             "accountMembershipStatus": int(row.get("isPaidSubscriber", 0)),
             "ndcId": ndcId,  # 0 is global
             "isGlobal": ndcId == 0,
+            "isBot": row.get("isBot", False),
             "reputation": 0 if ndcId == 0 else row["reputation"],
             "level": 0 if ndcId == 0 else get_level(row.get("reputation", 0)),
             "mood": None if ndcId == 0 else row["mood"],
@@ -309,6 +311,7 @@ class User:
             "accountMembershipStatus": int(row.get("isPaidSubscriber", 0)),
             "ndcId": ndcId,  # 0 is global
             "isGlobal": ndcId == 0,
+            "isBot": row.get("isBot", False),
             "reputation": 0 if ndcId == 0 else row.get("reputation", 0),
             "level": 0 if ndcId == 0 else get_level(row.get("reputation", 0)),
             "mood": None if ndcId == 0 else row.get("mood"),

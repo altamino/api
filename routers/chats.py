@@ -1372,6 +1372,115 @@ async def delete_message(
     return Base.Answer(spent_time=timestamp() - t1)
 
 
+@chats.post("/g/s/chat/thread/{chatId}/message/{messageId}")
+@chats.post("/x{ndcId}/s/chat/thread/{chatId}/message/{messageId}")
+@turtlelimiter(limit=5, period=TurtleTime.second, tag="edit-message")
+async def edit_message(request: Request, chatId: str, messageId: str, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession()
+
+    trigger_uid = request.state.session["uid"]
+
+    try:
+        data = await request.json()
+        if not isinstance(data.get("content"), str) or not data["content"].strip():
+            raise Exception()
+    except Exception:
+        return Errors.InvalidMessage(timestamp() - t1, lang=request.state.lang)
+
+    if len(data["content"]) > Config.MAX_TEXT_SIZE:
+        return Errors.BigMessage(timestamp() - t1, lang=request.state.lang)
+
+    db = await Database().init()
+    chat = db.get(f"x{ndcId}", "Chats")
+    chat_info = await chat.find_one({"id": chatId})
+
+    if not chat_info:
+        db.close()
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    if trigger_uid not in chat_info.get("memberList", []):
+        db.close()
+        return Errors.UserNotJoined(timestamp() - t1, lang=request.state.lang)
+
+    message_table = db.get(f"x{ndcId}", f"_Chat:{chatId}")
+    message = await message_table.find_one({"messageId": messageId})
+
+    if not message:
+        db.close()
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    if message["authorId"] != trigger_uid:
+        db.close()
+        return Errors.NotEnoughRights(spent_time=timestamp() - t1, lang=request.state.lang)
+
+    if message.get("messageType") == 100:
+        db.close()
+        return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
+
+
+    if message.get("messageType") != 0 or message.get("mediaType", 0) != 0:
+        db.close()
+        return Errors.InvalidMessage(timestamp() - t1, lang=request.state.lang)
+
+    now_time = message["createdTime"].__class__.utcnow() if hasattr(message["createdTime"], "utcnow") else None
+    edited_time = datetime.utcnow()
+
+    await message_table.update_one(
+        {"messageId": messageId},
+        {"$set": {
+            "content": data["content"],
+            "isEdited": True,
+            "editedTime": edited_time,
+        }}
+    )
+
+    updated_message = await message_table.find_one({"messageId": messageId})
+
+    xndc_users = db.get(f"x{ndcId}", "Users")
+    global_user = db.get(table="Users")
+
+    user_table = db.get(f"x{ndcId}", "Users")
+    user = await user_table.find_one({"id": trigger_uid}) or {}
+    globalBubbleId = user.get("bubbleId")
+    chatBubbleId = user.get("chatBubbles", {}).get(chatId)
+    bubbleId = chatBubbleId or globalBubbleId
+    bubbleVersion = None
+    if bubbleId:
+        bubbles_table = db.get(table="ChatBubbles")
+        bubble = await bubbles_table.find_one({"bubbleId": bubbleId}) or {}
+        bubbleVersion = bubble.get("version", 1)
+
+    messageObj = await Chat.LongMessage(
+        updated_message,
+        chatId,
+        xndc_users,
+        ndcId=ndcId,
+        chatBubbleId=bubbleId,
+        chatBubbleVersion=bubbleVersion,
+        global_user=global_user
+    )
+
+    answer = Base.Answer({"message": messageObj}, spent_time=timestamp() - t1)
+
+    ws_send_obj = {
+        "t": 1000,
+        "o": {
+            "ndcId": ndcId,
+            "chatMessage": messageObj,
+            "alertOption": 0,
+            "membershipStatus": 1,
+        },
+    }
+    target = chat_info.get("memberList", []) + chat_info.get("invitedList", [])
+    asyncio.get_event_loop().create_task(send_admin_ws(ws_send_obj, target))
+
+    db.close()
+    return answer
+
+
+
 # update message
 # POST /g/s/chat/thread/434cd5b4-a984-42c4-8375-46c1c6e0803d/message/3c10a84c-c9af-4ab1-84fe-ea0c8d5f2f0f
 
