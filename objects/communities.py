@@ -379,7 +379,7 @@ class Communities:
         table = connection.get(f"x{ndcId}", "Users")
         host_xndcId = await table.find_one({"id": data["agent"]})
         agent = User.OwnNonSensetiveProfile(host_xndcId, ndcId) if host_xndcId else None
-        community_head_list = []  # await _get_community_head_list(table, ndcId, data["agent"]) #it's work, but idk why app need it, so i will not add it for now
+        community_head_list =  await _get_community_head_list(table, ndcId, data["agent"]) #it's work, but idk why app need it, so i will not add it for now
         community_heat = await _compute_community_heat(table)
 
         membershipStatus = 0
