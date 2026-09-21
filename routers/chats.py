@@ -1295,6 +1295,7 @@ async def get_message(request: Request, chatId: str, messageId: str, ndcId: int 
     xndc_users = db.get(f"x{ndcId}", "Users")
 
     user = await xndc_users.find_one({"id": message_data["authorId"]}) or {}
+    
 
     globalBubbleId = user.get("bubbleId")
     chatBubbleId = user.get("chatBubbles", {}).get(chatId)

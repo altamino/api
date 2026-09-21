@@ -131,6 +131,7 @@ class Chat:
                 xndc_data["extensions"]["__disabledLevel__"] = global_row["extensions"][
                     "__disabledLevel__"
                 ]
+            row2 = global_row.get("isBot", False)
 
 
 
@@ -150,6 +151,7 @@ class Chat:
             "uid": data["authorId"],
             "author": User.GetUserInfo(xndc_data, ndcId=ndcId),
             "isHidden": False,
+            "isEdited": data.get("isEdited", False),
             "messageId": data["messageId"],
             "mediaType": data.get("mediaType", 0),
             "content": data["content"],
