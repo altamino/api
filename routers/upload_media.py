@@ -52,6 +52,7 @@ async def upload(request: Request, ndcId: int = 0, target: str = ""):
     file_ext = detect_file_ext(body)
     is_zip = body.startswith(b"PK\x03\x04")
     if file_ext is None and not is_zip:
+        print("InvalidMediaContent 1")
         return Errors.InvalidMediaContent(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
@@ -77,7 +78,8 @@ async def upload(request: Request, ndcId: int = 0, target: str = ""):
                         with zip_ref.open("theme_info.json") as f:
                             theme_config = loads(f.read())
                 rev = theme_config["revision"]
-            except Exception:
+            except Exception as e:
+                print(f"InvalidMediaContent 2 {e}")
                 return Errors.InvalidMediaContent(
                     spent_time=timestamp() - t1, lang=request.state.lang
                 )
@@ -102,7 +104,8 @@ async def upload(request: Request, ndcId: int = 0, target: str = ""):
                     with ZipFile(buffer) as zip_ref:
                         if zip_ref.testzip() is not None:
                             raise ValueError("bad zip")
-            except Exception:
+            except Exception as e:
+                print(f"InvalidMediaContent 3 {e}")
                 return Errors.InvalidMediaContent(
                     spent_time=timestamp() - t1, lang=request.state.lang
                 )

@@ -468,10 +468,10 @@ class Communities:
                         ),
                         "avChat": {
                             "screeningRoomEnabled": av.get(
-                                "screeningRoomEnabled", False
+                                "screeningRoomEnabled", True
                             ),
                             "audioEnabled": av.get("audioEnabled", True),
-                            "videoEnabled": av.get("videoEnabled", False),
+                            "videoEnabled": av.get("videoEnabled", True),
                             "audio2Enabled": av.get("audio2Enabled", True),
                         },
                         "publicChat": Communities.ModuleInfo(chat_mod),

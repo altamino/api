@@ -67,7 +67,7 @@ async def joined_communities(
     # parse page token
     if pageToken:
         start = parse_page_token(pageToken, start)
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     size = size if 0 < size < 101 else 25
     db = await Database().init()
     try:
@@ -162,7 +162,7 @@ async def search_community(
     if pageToken:
         start = parse_page_token(pageToken, start)
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(table="Communities")
@@ -247,7 +247,7 @@ async def search_community_by_amino_id(
             spent_time=timestamp() - t1,
         )
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(table="Communities")
@@ -275,7 +275,7 @@ async def join_community(request: Request, ndcId: int):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     db = await Database().init()
     try:
@@ -386,7 +386,7 @@ async def leave_community(request: Request, ndcId: int):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     db = await Database().init()
     try:
@@ -656,7 +656,7 @@ async def get_user_groups(
         return Base.Answer({"userProfileList": []}, spent_time=timestamp() - t1)
 
     size = size if 0 < size < 101 else 20
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(f"x{ndcId}", "Users")
@@ -706,7 +706,7 @@ async def reorder_user_group(request: Request, userGroupType: str, ndcId: int = 
     except Exception:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(f"x{ndcId}", "Users")
@@ -747,7 +747,7 @@ async def add_to_user_group(
     if userGroupType != UserGroupType.QuickAccess:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(f"x{ndcId}", "Users")
@@ -784,7 +784,7 @@ async def remove_from_user_group(
     if userGroupType != UserGroupType.QuickAccess:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(f"x{ndcId}", "Users")
@@ -1003,7 +1003,7 @@ async def live_layer(request: Request, ndcId: int = 0):
 @communities.post("/g/s/community/joined/reorder")
 async def reorder_communities(request: Request):
     t1 = timestamp()
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     data = await request.json()
     ndcIdList = data.get("ndcIdList", [])
     if not ndcIdList:
@@ -1040,7 +1040,7 @@ async def reorder_communities(request: Request):
 @communities.get("/x{ndcId}/s/user-profile/{uid}/compose-eligible-check")
 @validauth_required
 async def compose_eligible_check(request: Request, ndcId: int, uid: str):
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     if trigger_uid != uid:
         return Errors.InvalidRequest()
 
@@ -1091,7 +1091,7 @@ async def count_user_active_time(request: Request, ndcId: int = 0):
             spent_time=timestamp() - t1, lang=request.state.lang
         )
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     try:
         body = await request.json()
@@ -1382,7 +1382,7 @@ async def sticker_collections(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     size = size if 0 < size < 101 else 20
 
     db = await Database().init()
@@ -1446,7 +1446,7 @@ async def create_sticker_collection(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     try:
         body = await request.json()
@@ -1587,7 +1587,7 @@ async def edit_sticker_collection(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     try:
         body = await request.json()
@@ -1782,7 +1782,7 @@ async def delete_sticker_collection(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     db = await Database().init()
     try:
@@ -1850,7 +1850,7 @@ async def _set_collection_activation(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     db = await Database().init()
     try:
@@ -1909,7 +1909,7 @@ async def tipping(request: Request, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     try:
         data = await request.json()

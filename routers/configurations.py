@@ -172,7 +172,7 @@ async def full_reminder_configs(request: Request, ndcId: int = 0):
 
 @configurations.get("/g/s/auth/config-v2")
 async def some_auth_config(request: Request):
-    return Base.Answer({"mobileSignUpProviderList": [8]})
+    return Base.Answer({"mobileSignUpProviderList": []})#[8] <- allow phone register & login
 
 
 @configurations.post("/g/s/client-config")
@@ -331,7 +331,7 @@ async def feed_community(
     if pageToken:
         start = parse_page_token(pageToken, start)
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(table="Communities")
@@ -374,7 +374,7 @@ async def feed_topic(
     if pageToken:
         start = parse_page_token(pageToken, start)
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     db = await Database().init()
     try:
         table = db.get(table="Communities")

@@ -238,13 +238,36 @@ async def user_search(
 
 
 
+
+"""
+{
+  "categoryList": [
+    {
+      "threadCategory": {
+        "categoryId": "some_id",
+        "name": "Some category"
+      },
+      "threadListWrapper": {
+        "paging": {},
+        "playlistInThreadList": {},
+        "threadList": [],
+        "userInfoInThread": {}
+      }
+    }
+  ],
+  "communityInfoMapping": {}
+}
+
+
+"""
+
 @chats.get("/g/s/chat/thread/explore/categories")
 @chats.get("/x{ndcId}/s/chat/thread/explore/categories")  # ?need
 async def get_explore_chats(
     request: Request,
     ndcId: int = 0,
     threadPreviewSize: int = 20,
-    language: int = "en",
+    language: str = "en",
     start: int = 0,
     size: int = 4,
     pageToken: str | None = None,
@@ -253,7 +276,10 @@ async def get_explore_chats(
 
     request.state.session.get("uid")
     # con = await Database().init()
-    answer = {"threadList": []}
+    answer = {
+        "categoryList": [],
+        "communityInfoMapping": {}
+    }
 
     # con.close()
     return Base.Answer(answer, spent_time=timestamp() - t1)
@@ -275,7 +301,7 @@ async def chat_search(
     if pageToken:
         start = parse_page_token(pageToken, start)
     size = size if 0 < size < 101 else 25
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
 
     db = await Database().init()
     try:
@@ -314,7 +340,7 @@ async def get_chat_info(chatId: str, request: Request, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     return Base.Answer(
         {"thread": await Chat.Info(chatId, trigger_uid=trigger_uid, ndcId=ndcId)},
@@ -331,7 +357,7 @@ async def vvchat_permission(request: Request, chatId: str, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     payload = await request.json()
     vv_chat_join_type = payload.get("vvChatJoinType", 1)
     if not isinstance(vv_chat_join_type, int):
@@ -423,7 +449,7 @@ async def edit_chat(chatId: str, request: Request, ndcId: int = 0):
 
     data = await request.json()
     print(f"editing data for chat {chatId}:", data)
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     if chatId == "apply-bubble":
         return await chat_apply_bubble(request, t1, ndcId, data, trigger_uid)
 
@@ -489,7 +515,7 @@ async def edit_background_chat(chatId: str, request: Request, ndcId: int = 0):
         return Errors.InvalidSession()
 
     data = await request.json()
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     db = await Database().init()
     table = db.get(f"x{ndcId}", "Chats")
@@ -558,7 +584,7 @@ async def delete_chat(chatId: str, request: Request, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     db = await Database().init()
     table = db.get(f"x{ndcId}", "Chats")
     chat_info = await table.find_one({"id": chatId})
@@ -593,7 +619,7 @@ async def if_chat_exists(
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     if type == "exist-single" and q:
         db = await Database().init()
         table = db.get(f"x{ndcId}", "Chats")
@@ -707,7 +733,7 @@ async def create_chat(request: Request, ndcId: int = 0):
     t1 = timestamp()
 
     data = await request.json()
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     if data["type"] == ChatType.Private and (
         data.get("inviteeUids", []) == [] or len(data.get("inviteeUids", [])) != 1
     ):
@@ -978,7 +1004,7 @@ CALL_STATE_MESSAGE_TYPES = list(range(52, 61))
 @strike_check
 async def send_message(request: Request, chatId: str, ndcId: int = 0):
     t1 = timestamp()
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     try:
         data = await request.json()
@@ -1277,7 +1303,7 @@ async def get_message(request: Request, chatId: str, messageId: str, ndcId: int 
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     db = await Database().init()
     chat_table = db.get(f"x{ndcId}", "Chats")
@@ -1347,7 +1373,7 @@ async def delete_message(
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     work = False
 
     db = await Database().init()
@@ -1397,7 +1423,7 @@ async def edit_message(request: Request, chatId: str, messageId: str, ndcId: int
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     try:
         data = await request.json()
@@ -1708,7 +1734,7 @@ async def get_chat_cohosts(
 
     size = size if 0 < size < 101 else 25
     start = parse_page_token(pageToken, start)
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     connection = await Database().init()
     chat_table = connection.get(f"x{ndcId}", "Chats")
@@ -1762,7 +1788,7 @@ async def set_cohosts(request: Request, chatId: str, ndcId: int = 0):
         return Errors.InvalidSession()
 
     data = await request.json()
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     new_cohosts = data.get("uidList", [])
 
     connection = await Database().init()
@@ -1819,7 +1845,7 @@ async def del_cohosts(request: Request, chatId: str, uid: str, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     connection = await Database().init()
     chat = connection.get(f"x{ndcId}", "Chats")
@@ -1871,7 +1897,7 @@ async def transfer_host(request: Request, chatId: str, ndcId: int = 0):
         return Errors.InvalidSession()
 
     data = await request.json()
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
     host_candidates = data.get("uidList", [])
     if not host_candidates:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
@@ -1939,7 +1965,7 @@ async def tip_chat(request: Request, chatId: str, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     try:
         data = await request.json()
@@ -2121,7 +2147,7 @@ async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     connection = await Database().init()
     chat_table = connection.get(f"x{ndcId}", "Chats")
@@ -2202,7 +2228,7 @@ async def tipped_users_summary(request: Request, chatId: str, ndcId: int = 0, st
 async def invite_to_chat(request: Request, chatId: str, ndcId: int = 0):
     t1 = timestamp()
     data = await request.json()
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     toInvite = data.get("uids", [])
 
     if uid in [None, "", False]:
@@ -2294,7 +2320,7 @@ async def join_chat(request: Request, chatId: str, userId: str, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
 
     if uid in [None, "", False]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -2370,7 +2396,7 @@ async def leave_chat(
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     messageId = str(uuid4())
     work = False
     ban = False
@@ -2464,7 +2490,7 @@ async def mark_as_read(request: Request, chatId: str, ndcId: int = 0):
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
 
     try:
         data = await request.json()
@@ -2511,7 +2537,7 @@ async def toggle_things(
     if parameter not in ["members-can-invite", "view-only"]:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
-    trigger_uid = request.state.session["uid"]
+    trigger_uid = request.state.session.get("uid")
 
     db = await Database().init()
     table = db.get(f"x{ndcId}", "Chats")
@@ -2603,7 +2629,7 @@ async def chat_alert_options(
     if not request.state.session["validsession"]:
         return Errors.InvalidSession()
 
-    uid = request.state.session["uid"]
+    uid = request.state.session.get("uid")
     if uid in [None, "", False]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
     if uid != userId:

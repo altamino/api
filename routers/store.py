@@ -14,7 +14,7 @@ store.route_class = CachableRoute
 
 
 def _uid(request: Request) -> str:
-    return request.state.session["uid"]
+    return request.state.session.get("uid")
 
 
 def _paging(request: Request, default_size: int = 25) -> tuple[int, int]:
@@ -25,7 +25,6 @@ def _paging(request: Request, default_size: int = 25) -> tuple[int, int]:
 
 @store.get("/x{ndcId}/s/store/items")
 @store.get("/g/s/store/items")
-@validauth_required
 async def get_store_items(request: Request, ndcId: int = 0):
     t1 = timestamp()
     group_id = request.query_params.get("sectionGroupId", "avatar-frame")
@@ -74,7 +73,6 @@ async def apply_avatar_frame(request: Request, ndcId: int = 0):
 
 @store.get("/x{ndcId}/s/avatar-frame/{frameId}")
 @store.get("/g/s/avatar-frame/{frameId}")
-@validauth_required
 async def get_avatar_frame(request: Request, frameId: str, ndcId: int = 0):
     t1 = timestamp()
     async with await StoreService.create(_uid(request), ndcId) as svc:
@@ -115,7 +113,6 @@ async def store_purchase(request: Request, ndcId: int = 0):
 
 @store.get("/g/s/store/sections")
 @store.get("/x{ndcId}/s/store/sections")
-@validauth_required
 async def storesections(request: Request, ndcId: int = 0):
     t1 = timestamp()
     raw = request.query_params.get("storeSectionGroupIds", "")
@@ -131,7 +128,6 @@ async def storesections(request: Request, ndcId: int = 0):
 
 @store.get("/x{ndcId}/s/chat/chat-bubble/{bubbleId}")
 @store.get("/g/s/chat/chat-bubble/{bubbleId}")
-@validauth_required
 async def get_chat_bubble(request: Request, bubbleId: str, ndcId: int = 0):
     t1 = timestamp()
     async with await StoreService.create(_uid(request), ndcId) as svc:
@@ -144,7 +140,6 @@ async def get_chat_bubble(request: Request, bubbleId: str, ndcId: int = 0):
 
 @store.get("/x{ndcId}/s/store/recommend-items")
 @store.get("/g/s/store/recommend-items")
-@validauth_required
 async def recommend_items(request: Request, ndcId: int = 0):
     t1 = timestamp()
     group_id = request.query_params.get("sectionGroupId", "avatar-frame")
@@ -196,7 +191,6 @@ async def get_store_subscription(request: Request):
 
 @store.get("/x{ndcId}/s/store/recommend-store-by-product")
 @store.get("/g/s/store/recommend-store-by-product")
-@validauth_required
 async def recommend_store_by_product(request: Request, ndcId: int = 0):
     t1 = timestamp()
     return Base.Answer(
@@ -207,8 +201,7 @@ async def recommend_store_by_product(request: Request, ndcId: int = 0):
 
 @store.get("/x{ndcId}/s/store/share-requests/pending-check")
 @store.get("/g/s/store/share-requests/pending-check")
-@validauth_required
-async def recommend_store_by_product(request: Request, objectType: int, ndcId: int = 0):
+async def pending_check(request: Request, objectType: int, ndcId: int = 0):
     t1 = timestamp()
     return Base.Answer(
         spent_time=timestamp() - t1,

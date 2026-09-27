@@ -917,10 +917,25 @@ async def tip_blog(request: Request, blogId: str, ndcId: int = 0):
     new_tipped_coins = round(tip_info.get("tippedCoins", 0.0) + coins, 2)
 
     updated_tip_info = {
+        "tipOptionList": [
+            {"value": 2, "icon": "https://media.altamino.top/monetization/coins.png"},
+            {
+                "value": 10,
+                "icon": "https://media.altamino.top/monetization/stack_of_coins.png",
+            },
+            {
+                "value": 50,
+                "icon": "https://media.altamino.top/monetization/tall_stack_of_coins.png",
+            },
+        ],
         "tipMaxCoin": 500,
         "tippersCount": len(tippers_list),
         "tippable": True,
         "tipMinCoin": 1,
+        "tipCustomOption": {
+            "value": None,
+            "icon": "https://media.altamino.top/monetization/bag_of_coins.png",
+        },
         "tippedCoins": new_tipped_coins,
         "tippersList": tippers_list,
     }
