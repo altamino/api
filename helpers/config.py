@@ -83,3 +83,5 @@ class Config:
     # FCM push notifications (optional but by default disabled)
     ENABLE_PUSH = environ.get("ENABLE_PUSH", 0)
     FCM_SERVICE_ACCOUNT = environ.get("FCM_SERVICE_ACCOUNT")
+
+    AGORA_ADMIN_ONLY_MODE = environ.get("AGORA_ADMIN_ONLY_MODE", "0") == "1"

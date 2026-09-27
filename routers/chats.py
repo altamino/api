@@ -369,6 +369,20 @@ async def vvchat_permission(request: Request, chatId: str, ndcId: int = 0):
     if not chat_info:
         db.close()
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+    if Config.AGORA_ADMIN_ONLY_MODE:
+        user_table = db.get(table="Users")
+        user = await table.find_one({"id": trigger_uid})
+        if user is None:
+            return Errors.NotEnoughRights(
+                        spent_time=timestamp() - t1, lang=request.state.lang
+                    )
+
+        role = user.get("role", 0)
+        if not UserRole.is_global_staff(role):
+            return Errors.NotEnoughRights(
+                        spent_time=timestamp() - t1, lang=request.state.lang
+                    )
+
 
     # AltAmino client only needs a successful ack for this request.
     response = {
