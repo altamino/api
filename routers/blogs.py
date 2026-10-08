@@ -744,7 +744,7 @@ async def post_blog(request: Request, ndcId: int = 0):
             db.close()
             return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
     else:
-        users = db.get("x0", "Users")
+        users = db.get(table="Users")
         user = await users.find_one({"id": trigger_uid})
         if not user or not UserRole.is_global_staff(user.get("role", 0)):
             db.close()

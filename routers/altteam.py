@@ -29,7 +29,7 @@ from objects import Links
 import uuid
 from datetime import UTC, datetime
 from objects.types.store import DiscountStatus, RestrictType
-
+from helpers.processors.session import SessionProcessor
 
 def _iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -42,7 +42,7 @@ altteam.route_class = CachableRoute
 @altteam.get("/g/s/altteam/version")
 async def get_altteam_version(request: Request):
     t1 = timestamp()
-    latest_version = "1.0.4"
+    latest_version = "1.2.0"
     current_version = request.query_params.get("version")
     altTeamPage = "https://altamino.top/altapp"
     return Base.Answer(
@@ -829,6 +829,7 @@ async def disable_toggle(request: Request, t: str, action: str, objId: str):
     if result.matched_count == 0:
         db.close()
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+    if t == "user" and action == "disable": await SessionProcessor.EndAllByUser(objId)
     db.close()
     return Base.Answer(
         {},

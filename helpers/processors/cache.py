@@ -83,3 +83,41 @@ class CacheProcessor:
         full_key = CacheProcessor._redis_key(key, prefix)
 
         return await redis.unlink(full_key)
+
+
+    @staticmethod
+    async def SetAdd(
+        key: str,
+        member: str,
+        prefix: str = "",
+        expiring_after: Optional[int] = None,
+    ) -> None:
+        """Add member to a redis set; refresh the set TTL if given."""
+        redis = get()
+        full_key = CacheProcessor._redis_key(key, prefix)
+
+        await redis.sadd(full_key, member)
+        if expiring_after is not None:
+            await redis.expire(full_key, expiring_after)
+
+    @staticmethod
+    async def SetRemove(
+        key: str,
+        member: str,
+        prefix: str = "",
+    ) -> None:
+        redis = get()
+        full_key = CacheProcessor._redis_key(key, prefix)
+
+        await redis.srem(full_key, member)
+
+    @staticmethod
+    async def SetMembers(
+        key: str,
+        prefix: str = "",
+    ) -> list[str]:
+        redis = get()
+        full_key = CacheProcessor._redis_key(key, prefix)
+
+        members = await redis.smembers(full_key)
+        return [CacheProcessor._norm(m) for m in members]

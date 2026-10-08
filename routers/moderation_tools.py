@@ -6,7 +6,7 @@ from helpers.i18n import i18n
 from time import time as timestamp
 
 from fastapi import APIRouter, Request
-
+from helpers.processors.session import SessionProcessor
 from helpers.database.mongo import Database
 from helpers.database.models import ModelFabric, MH_Item
 from helpers.decorators.validauth import validauth_required
@@ -20,35 +20,39 @@ moderation_tools = APIRouter()
 moderation_tools.route_class = CachableRoute
 
 
+MOD_LEVELS = {
+    100: 2,  # leader
+    101: 1,  # curator
+    102: 2,  # agent
+    200: 3,
+    201: 3,
+    555: 3,
+    254: 3,
+}
+
+
 async def check_rights(
     db, uid: str, ndcId: int = 0, no_curators: bool = False, only_gods: bool = False
-) -> (bool, int):
-    table = db.get(f"x{ndcId}", table="Users")
-    user = await table.find_one({"id": uid})
+) -> tuple[bool, int]:
+    g_user = await db.get(table="Users").find_one({"id": uid})
+    g_role = g_user.get("role", 0) if g_user else 0
+
+    # Глобальный админ платформы может всё и в любом сообществе
+    if UserRole.is_global_staff(g_role):
+        return True, 3
+
+    if only_gods:
+        return False, 0
+
+    user = await db.get(f"x{ndcId}", table="Users").find_one({"id": uid})
     if user is None:
         return False, 0
 
     role = user.get("role", 0)
-    print(role)
-
     if no_curators and role == UserRole.Curator:
         return False, 0
 
-    if only_gods:
-        return UserRole.is_global_staff(role), 3
-
-    modLevel_matrix = {
-        100: 2,
-        101: 1,
-        102: 2,
-        200: 3,
-        201: 3,
-        555: 3,
-        254: 3,
-    }
-    return UserRole.is_privileged_role(user.get("role", 0)), modLevel_matrix.get(
-        user.get("role", 0), 0
-    )
+    return UserRole.is_privileged_role(role), MOD_LEVELS.get(role, 0)
 
 
 # MODERATION HISTORY
@@ -196,7 +200,13 @@ async def ban_user_toggle(request: Request, uid: str, ndcId: int = 0):
     is_unban = "unban" in request.url.path
     status = 0 if is_unban else 9
 
-    table = db.get(f"x{ndcId}", "Users")
+    can_do2, _ = await check_rights(db, uid, only_gods=True)
+    if status == 9 and can_do2:
+        return Errors.NotEnoughRights(
+            spent_time=timestamp() - t1, lang=request.state.lang
+        )
+
+    table = db.get(f"x{ndcId}", "Users") if ndcId != 0 else db.get(table="Users")
     await table.update_one({"id": uid}, {"$set": {"status": status}})
 
     history = db.get(f"x{ndcId}", "ModerationHistory")
@@ -213,6 +223,8 @@ async def ban_user_toggle(request: Request, uid: str, ndcId: int = 0):
             authorId=request.state.session["uid"],
         )
     )
+    if ndcId == 0:
+        await SessionProcessor.EndAllByUser(uid)
 
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
