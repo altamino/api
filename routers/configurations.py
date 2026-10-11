@@ -9,7 +9,7 @@ from helpers.decorators.validauth import validauth_required
 from helpers.config import Config
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Errors, Communities
-
+from json import dumps
 
 configurations = APIRouter()
 configurations.route_class = CachableRoute
@@ -357,7 +357,6 @@ async def feed_community(
     finally:
         db.close()
 
-
 # temp
 @configurations.get("/g/s/topic/0/feed/topic")
 async def feed_topic(
@@ -381,7 +380,13 @@ async def feed_topic(
         query = {"isSelected": True, "hidden": {"$ne": True}}
 
         total_count = await table.count_documents(query)
-        items = [item async for item in table.find(query).skip(start).limit(size)]
+        items = [
+            item
+            async for item in table.find(query)
+            .sort([("pickOrder", 1), ("id", 1)])
+            .skip(start)
+            .limit(size)
+        ]
         communityList = [await Communities.Info(item, db, uid) for item in items]
 
         return Base.Answer(
@@ -416,6 +421,34 @@ async def feed_story(
         spent_time=timestamp() - t1,
     )
 
+_BANNER_MODULE_ID = "1c4ea74e-b500-4c72-821f-0677a5078bdc"
+_DEFAULT_BANNERS = [
+    ("https://media.altamino.top/always-static/welcome.jpg", "", "https://t.me/altamino"),
+    ("https://media.altamino.top/always-static/warning.jpg", "", "https://github.com/altamino"),
+]
+
+
+def _banner_item(position: int, image_url: str, landing_url: str, deep_link: str = "ndc://e") -> dict:
+    n = position + 1
+    return {
+        "objectId": str(n),
+        "imageUrl": image_url,
+        "adCampaignId": n,
+        "deepLink": deep_link,
+        "strategyInfo": dumps(
+            {
+                "scenarioType": "banner-703920",
+                "objectId": "804584",
+                "imageUrl": image_url,
+                "landingUrl": landing_url,
+                "reqId": str(uuid4()),
+                "adUnitId": 703920,
+                "uiPos": n,
+                "objectType": "ad_campaign",
+            }
+        ),
+        "objectType": 153,
+    }
 
 @configurations.get("/g/s/topic/0/feed/banner-ads")
 async def banner(
@@ -423,32 +456,44 @@ async def banner(
 ):
     if moduleId is None:
         return Errors.InvalidRequest()
-
-    if moduleId == "1c4ea74e-b500-4c72-821f-0677a5078bdc":
-        return Base.Answer(
-            {
-                "paging": {},
-                "itemList": [
-                    {
-                        "objectId": "2",
-                        "imageUrl": "https://media.altamino.top/always-static/welcome.jpg",
-                        "adCampaignId": 2,
-                        "deepLink": "ndc://e",
-                        "strategyInfo": '{"scenarioType": "banner-703920", "objectId": "804584", "imageUrl": "https://media.altamino.top/always-static/welcome.jpg", "landingUrl": "ndc://community/0", "reqId": "852e7230-6135-4cd2-89ea-e860417f6c48", "adUnitId": 703920, "uiPos": 3, "objectType": "ad_campaign"}',
-                        "objectType": 153,
-                    },
-                    {
-                        "objectId": "1",
-                        "imageUrl": "https://media.altamino.top/always-static/warning.jpg",
-                        "adCampaignId": 1,
-                        "deepLink": "ndc://e",
-                        "strategyInfo": '{"scenarioType": "banner-703920", "objectId": "804584", "imageUrl": "https://media.altamino.top/always-static/warning.jpg", "landingUrl": "ndc://membership", "reqId": "f41f605a-4d81-4361-b571-19443ce136bf", "adUnitId": 703920, "uiPos": 2, "objectType": "ad_campaign"}',
-                        "objectType": 153,
-                    },
-                ],
-                "allItemCount": 2,
-            }
-        )
-
-    else:
+    if moduleId != _BANNER_MODULE_ID:
         return Errors.DataNotExist()
+
+    try:
+        lang = str(request.state.lang or "en")
+    except Exception:
+        lang = "en"
+    lang = lang.strip()
+    langs = list({lang, lang.lower(), lang.lower().replace("_", "-").split("-")[0]})
+
+    pairs = _DEFAULT_BANNERS
+    db = await Database().init()
+    try:
+        table = db.get(table="DiscoverBanners")
+        if await table.count_documents({}) > 0:
+            flt = {
+                "enabled": {"$ne": False},
+                "$or": [
+                    {"segment": {"$in": ["all", *langs]}},
+                    {"segment": {"$exists": False}},
+                ],
+            }
+            rows = [b async for b in table.find(flt).sort("order", 1)]
+            pairs2 = [
+                (
+                    b.get("imageUrl", ""),
+                    b.get("landingUrl", ""),
+                    b.get("deepLink") or "ndc://e",
+                )
+                for b in rows
+            ]
+            if pairs2:
+                pairs = pairs2
+    finally:
+        db.close()
+
+    items = [
+        _banner_item(i, img, link, deepLink)
+        for i, (img, link, deepLink) in enumerate(pairs)
+    ]
+    return Base.Answer({"paging": {}, "itemList": items, "allItemCount": len(items)})

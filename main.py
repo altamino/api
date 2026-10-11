@@ -26,10 +26,45 @@ from routers.upload_media import upload_media
 from routers.altteam import altteam
 from routers.store import store
 from routers.notification import notification_methods
+import logging
+import time
 
 # app things
 
 app = FastAPI(title="AltAmino", version="1", docs_url=None, redoc_url=None)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+log = logging.getLogger("altamino")
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.perf_counter()
+    ip = (
+        request.headers.get("CF-Connecting-IP")
+        or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else "-")
+    )
+    response = await call_next(request)
+    ms = (time.perf_counter() - start) * 1000
+    try:uid = request.state.session.get("uid")
+    except:
+        uid=None
+    log.info(
+        "%s | %s %s | %s | %.1fms | uid=%s",
+        ip,
+        request.method,
+        request.url.path,
+        response.status_code,
+        ms,
+        uid,
+    )
+    return response
+
+
 
 
 @app.get("/")

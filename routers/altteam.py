@@ -9,10 +9,11 @@ from helpers.processors.email import EmailProcessor
 from time import time as timestamp
 import hashlib
 import io
+import re
 import json
 import zipfile
 from fastapi import APIRouter, Request
-
+from helpers.config import Config
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Errors
 from objects.types import UserRole, UserStatus
@@ -21,7 +22,7 @@ from objects.types.store import StoreItemType
 from string import ascii_letters, digits
 import secrets
 
-
+from helpers.database.redis import get as get_redis
 from helpers.database.models import Global, ModelFabric
 from helpers.generator import Generator
 from objects import Links
@@ -120,6 +121,66 @@ async def get_altamino_team(request: Request):
         return Base.Answer({"userProfileList": team_list}, spent_time=timestamp() - t1)
     finally:
         db.close()
+
+
+
+
+async def _connected_uids() -> list[str]:
+    r = get_redis()
+    now = timestamp()
+    await r.zremrangebyscore("ws:connected", "-inf", now)
+    members = await r.zrangebyscore("ws:connected", now, "+inf")
+    uids = set()
+    for m in members:
+        if isinstance(m, bytes):
+            m = m.decode()
+        uids.add(m.rpartition(":")[0])
+    return sorted(uids)
+
+
+@altteam.get("/g/s/altteam/online")
+async def admin_online_users(request: Request, start: int = 0, size: int = 25):
+    t1 = timestamp()
+    uids = await _connected_uids()
+    total = len(uids)
+    page = uids[start : start + size]
+    trigger_uid = request.state.session.get("uid")
+
+    db = await Database().init()
+    sensitive_table = db.get(table="Users")
+    user = await sensitive_table.find_one({"id": trigger_uid})
+    if not user or not UserRole.is_global_staff(user.get("role", 0)):
+        db.close()
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+    try:
+        g_table = db.get(table="Users")
+        profile_table = db.get("x0", "Users")
+
+        global_rows = {
+            r["id"]: r async for r in g_table.find({"id": {"$in": page}})
+        }
+        profile_rows = {
+            r["id"]: r async for r in profile_table.find({"id": {"$in": page}})
+        }
+    finally:
+        db.close()
+
+    users = []
+    for uid in page:
+        g = global_rows.get(uid, {})
+        p = profile_rows.get(uid, {})
+        users.append({
+            "uid": uid,
+            "nickname": p.get("nickname") or g.get("nickname"),
+            "icon": p.get("icon") or g.get("icon"),
+            "aminoId": g.get("aminoId") or p.get("aminoId"),
+            "role": g.get("role", 0),
+            "status": g.get("status", 0),
+        })
+
+    return Base.Answer({"usersCount": total, "userList": users}, spent_time=timestamp() - t1)
+
+
 
 
 @altteam.get("/g/s/altteam/{userId}")
@@ -408,12 +469,12 @@ async def get_user_communities(request: Request, userId: str):
         result = []
 
         async for item in communities_table.find({"id": {"$in": community_ids}}):
-            ndc_id = item["id"]
-            ndc_users_table = db.get(f"x{ndc_id}", "Users")
+            ndcId = item["id"]
+            ndc_users_table = db.get(f"x{ndcId}", "Users")
             ndc_profile = await ndc_users_table.find_one({"id": userId})
 
             link = await links_table.find_one(
-                {"objectId": userId, "objectType": 0, "ndcId": int(ndc_id)}
+                {"objectId": userId, "objectType": 0, "ndcId": int(ndcId)}
             )
 
             if link is None and ndc_profile:
@@ -423,7 +484,7 @@ async def get_user_communities(request: Request, userId: str):
                     targetCode=1,
                     objectId=userId,
                     objectType=0,
-                    ndcId=int(ndc_id),
+                    ndcId=int(ndcId),
                 )
                 await links_table.insert_one(link)
 
@@ -822,6 +883,10 @@ async def disable_toggle(request: Request, t: str, action: str, objId: str):
         return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
 
     table = db.get(table=_t[t])
+    try:
+        objId = int(objId)
+    except ValueError:
+        pass
     result = await table.update_one(
         {"id": objId},
         {"$set": {"status": 9 if action == "disable" else 0}},
@@ -835,3 +900,312 @@ async def disable_toggle(request: Request, t: str, action: str, objId: str):
         {},
         spent_time=timestamp() - t1,
     )
+
+
+
+
+
+
+
+
+#discover (TODO)
+
+DISCOVER_BANNERS = "DiscoverBanners"
+
+
+async def _is_staff(request: Request, db) -> bool:
+    uid = request.state.session.get("uid")
+    user = await db.get(table="Users").find_one({"id": uid})
+    return bool(user and UserRole.is_global_staff(user.get("role", 0)))
+
+
+def _banner_out(b: dict) -> dict:
+    return {
+        "id": b["id"],
+        "imageUrl": b.get("imageUrl", ""),
+        "landingUrl": b.get("landingUrl", ""),
+        "deepLink": b.get("deepLink", ""),
+        "segment": b.get("segment", "all"),
+        "enabled": b.get("enabled", True),
+        "order": b.get("order", 0),
+    }
+
+
+def _community_out(c: dict) -> dict:
+    return {
+        "ndcId": c.get("id"),
+        "name": c.get("name"),
+        "aminoId": c.get("aminoId"),
+        "icon": c.get("icon"),
+        "isSelected": bool(c.get("isSelected", False)),
+    }
+
+
+@altteam.get("/g/s/altteam/discover/banners")
+async def discover_banners_list(request: Request):
+    t1 = timestamp()
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table=DISCOVER_BANNERS)
+        items = [b async for b in table.find({}).sort("order", 1)]
+        return Base.Answer(
+            {"bannerList": [_banner_out(b) for b in items]},
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()
+
+
+@altteam.post("/g/s/altteam/discover/banners/create")
+async def discover_banner_create(request: Request):
+    t1 = timestamp()
+    body = await request.json()
+    image_url = str(body.get("imageUrl", "")).strip()
+    landing_url = str(body.get("landingUrl", "")).strip()
+    deep_link = str(body.get("deepLink", "")).strip()
+    segment = str(body.get("segment", "all")).strip()
+    segment = segment if segment in Config.LANG_SEGMENTS else "all"
+    if not image_url.startswith("http"):
+        return Errors.InvalidRequest()
+
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table=DISCOVER_BANNERS)
+        last = await table.find_one({}, sort=[("order", -1)])
+        doc = {
+            "id": str(uuid.uuid4()),
+            "imageUrl": image_url,
+            "landingUrl": landing_url,
+            "segment": segment,
+            "deepLink": deep_link,
+            "enabled": True,
+            "order": (last.get("order", 0) + 1) if last else 0,
+        }
+        await table.insert_one(doc)
+        return Base.Answer({"banner": _banner_out(doc)}, spent_time=timestamp() - t1)
+    finally:
+        db.close()
+
+
+@altteam.post("/g/s/altteam/discover/banners/reorder")
+async def discover_banners_reorder(request: Request):
+    t1 = timestamp()
+    body = await request.json()
+    ids = body.get("ids")
+    if not isinstance(ids, list):
+        return Errors.InvalidRequest()
+
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table=DISCOVER_BANNERS)
+        for i, banner_id in enumerate(ids):
+            await table.update_one({"id": str(banner_id)}, {"$set": {"order": i}})
+        return Base.Answer(spent_time=timestamp() - t1)
+    finally:
+        db.close()
+
+
+@altteam.post("/g/s/altteam/discover/banners/{banner_id}/edit")
+async def discover_banner_edit(request: Request, banner_id: str):
+    t1 = timestamp()
+    body = await request.json()
+    updates = {}
+    if "imageUrl" in body:
+        url = str(body["imageUrl"]).strip()
+        if not url.startswith("http"):
+            return Errors.InvalidRequest()
+        updates["imageUrl"] = url
+    if "landingUrl" in body:
+        updates["landingUrl"] = str(body["landingUrl"]).strip()
+    if "enabled" in body:
+        updates["enabled"] = bool(body["enabled"])
+    if "deepLink" in body:
+        updates["deepLink"] = str(body.get("deepLink", "")).strip()
+    if "segment" in body:
+        segment = str(body.get("segment", "all")).strip()
+        updates["segment"] = segment if segment in Config.LANG_SEGMENTS else "all"
+    if not updates:
+        return Errors.InvalidRequest()
+
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table=DISCOVER_BANNERS)
+        res = await table.update_one({"id": banner_id}, {"$set": updates})
+        if res.matched_count == 0:
+            return Errors.DataNotExist()
+        return Base.Answer(spent_time=timestamp() - t1)
+    finally:
+        db.close()
+
+
+@altteam.post("/g/s/altteam/discover/banners/{banner_id}/delete")
+async def discover_banner_delete(request: Request, banner_id: str):
+    t1 = timestamp()
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        await db.get(table=DISCOVER_BANNERS).delete_one({"id": banner_id})
+        return Base.Answer(spent_time=timestamp() - t1)
+    finally:
+        db.close()
+
+
+@altteam.get("/g/s/altteam/discover/picks")
+async def discover_picks(request: Request):
+    t1 = timestamp()
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table="Communities")
+        items = [c async for c in table.find({"isSelected": True})]
+        return Base.Answer(
+            {"communityList": [_community_out(c) for c in items]},
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()
+
+
+@altteam.get("/g/s/altteam/discover/communities/search")
+async def discover_communities_search(
+    request: Request, query: str = "", start: int = 0, size: int = 20
+):
+    t1 = timestamp()
+    query = query.strip()
+    if not query:
+        return Base.Answer({"communityList": []}, spent_time=timestamp() - t1)
+
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table="Communities")
+        flt = {
+            "hidden": {"$ne": True},
+            "name": {"$regex": re.escape(query), "$options": "i"},
+        }
+        items = [c async for c in table.find(flt).skip(start).limit(min(size, 50))]
+        return Base.Answer(
+            {"communityList": [_community_out(c) for c in items]},
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()
+
+@altteam.get("/g/s/altteam/discover/picks")
+async def discover_picks_list(request: Request):
+    t1 = timestamp()
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table="Communities")
+        items = [
+            c
+            async for c in table.find({"isSelected": True}).sort(
+                [("pickOrder", 1), ("id", 1)]
+            )
+        ]
+        return Base.Answer(
+            {"communityList": [_community_out(c) for c in items]},
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()
+
+
+@altteam.get("/g/s/altteam/discover/communities/search")
+async def discover_communities_search(
+    request: Request, query: str = "", start: int = 0, size: int = 20
+):
+    t1 = timestamp()
+    q = query.strip()
+    if not q:
+        return Errors.InvalidRequest()
+    size = max(1, min(size, 50))
+    rx = {"$regex": re.escape(q), "$options": "i"}
+
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table="Communities")
+        flt = {"$or": [{"name": rx}, {"aminoId": rx}]}
+        if q.isdigit():
+            flt["$or"].append({"id": int(q)})
+        items = [c async for c in table.find(flt).skip(start).limit(size)]
+        return Base.Answer(
+            {"communityList": [_community_out(c) for c in items]},
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()
+
+
+@altteam.post("/g/s/altteam/discover/picks/reorder")
+async def discover_picks_reorder(request: Request):
+    t1 = timestamp()
+    body = await request.json()
+    picks = body.get("picks")
+    if not isinstance(picks, list):
+        return Errors.InvalidRequest()
+    try:
+        ids = [int(x) for x in picks]
+    except (TypeError, ValueError):
+        return Errors.InvalidRequest()
+
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table="Communities")
+        for i, ndc_id in enumerate(ids):
+            await table.update_one(
+                {"id": ndc_id, "isSelected": True}, {"$set": {"pickOrder": i}}
+            )
+        return Base.Answer(spent_time=timestamp() - t1)
+    finally:
+        db.close()
+
+
+@altteam.post("/g/s/altteam/discover/picks/{ndc_id}/set")
+async def discover_pick_set(request: Request, ndc_id: int):
+    t1 = timestamp()
+    body = await request.json()
+    selected = bool(body.get("selected", True))
+
+    db = await Database().init()
+    try:
+        if not await _is_staff(request, db):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(table="Communities")
+        if not await table.find_one({"id": ndc_id}):
+            return Errors.DataNotExist()
+
+        if selected:
+            last = await table.find_one(
+                {"isSelected": True, "pickOrder": {"$exists": True}},
+                sort=[("pickOrder", -1)],
+            )
+            order = (last.get("pickOrder", 0) + 1) if last else 0
+            await table.update_one(
+                {"id": ndc_id}, {"$set": {"isSelected": True, "pickOrder": order}}
+            )
+        else:
+            await table.update_one(
+                {"id": ndc_id},
+                {"$set": {"isSelected": False}, "$unset": {"pickOrder": ""}},
+            )
+        return Base.Answer(spent_time=timestamp() - t1)
+    finally:
+        db.close()
