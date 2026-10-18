@@ -48,9 +48,6 @@ async def get_recommended_blogs(request: Request, ndcId: int):
     return Base.Answer({"blogList": []})
 
 
-
-
-
 @blog_methods.post("/x{ndcId}/s/feed/featured/reorder")
 async def reorder_featured_blogs(request: Request, ndcId: int, body: dict):
     t1 = timestamp()
@@ -71,6 +68,8 @@ async def reorder_featured_blogs(request: Request, ndcId: int, body: dict):
 
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
+
+
 # fearured
 @blog_methods.get("/x{ndcId}/s/feed/featured")
 async def get_featured_blogs(
@@ -144,8 +143,6 @@ async def get_featured_blogs(
     )
 
 
-
-
 @blog_methods.get("/x{ndcId}/s/blog-category/{categoryId}/blog-list")
 @blog_methods.get("/g/s/blog-category/{categoryId}/blog-list")
 async def get_blog_category_list(
@@ -193,7 +190,6 @@ async def get_blog_category_list(
         },
         spent_time=timestamp() - t1,
     )
-
 
 
 @blog_methods.get("/x{ndcId}/s/feed/featured-more")
@@ -264,6 +260,7 @@ async def get_featured_more(
         },
         spent_time=timestamp() - t1,
     )
+
 
 @blog_methods.get("/x{ndcId}/s/feed/blog-all")
 @blog_methods.get("/g/s/feed/blog-all")
@@ -455,7 +452,9 @@ async def get_blog(
     if blog:
         if blog.get("featuredType") == 1:
             current_time = int(time() * 1000)
-            expires_at = blog.get("featuredTime", 0) + blog.get("featuredDuration", 0) * 1000
+            expires_at = (
+                blog.get("featuredTime", 0) + blog.get("featuredDuration", 0) * 1000
+            )
             if expires_at <= current_time:
                 blog["featuredType"] = 0
 
@@ -472,6 +471,7 @@ async def get_blog(
 
     db.close()
     return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
+
 
 # edit blog post
 
@@ -728,7 +728,7 @@ async def post_blog(request: Request, ndcId: int = 0):
         BlogType.Question,
         BlogType.Vote,
         BlogType.Wiki,
-        BlogType.Quiz
+        BlogType.Quiz,
     ]:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
@@ -809,28 +809,33 @@ async def post_blog(request: Request, ndcId: int = 0):
             q_id = str(uuid4())
             opt_list = []
             for opt in q.get("extensions", {}).get("quizQuestionOptList", []):
-                opt_list.append({
-                    "optId": str(uuid4()),
-                    "title": opt["title"],
-                    "mediaList": MediaList.List(opt.get("mediaList", [])),
-                    "isCorrect": bool(opt.get("isCorrect", False)),
-                })
-            quiz_questions.append({
-                "quizQuestionId": q_id,
-                "title": q.get("title", ""),
-                "mediaList": MediaList.List(q.get("mediaList", [])),
-                "parentId": blogId,
-                "parentType": 1,
-                "extensions": {
-                    "quizAnswerExplanation": q.get("extensions", {}).get("quizAnswerExplanation", ""),
-                    "quizQuestionOptList": opt_list,
-                },
-            })
+                opt_list.append(
+                    {
+                        "optId": str(uuid4()),
+                        "title": opt["title"],
+                        "mediaList": MediaList.List(opt.get("mediaList", [])),
+                        "isCorrect": bool(opt.get("isCorrect", False)),
+                    }
+                )
+            quiz_questions.append(
+                {
+                    "quizQuestionId": q_id,
+                    "title": q.get("title", ""),
+                    "mediaList": MediaList.List(q.get("mediaList", [])),
+                    "parentId": blogId,
+                    "parentType": 1,
+                    "extensions": {
+                        "quizAnswerExplanation": q.get("extensions", {}).get(
+                            "quizAnswerExplanation", ""
+                        ),
+                        "quizQuestionOptList": opt_list,
+                    },
+                }
+            )
         blog_data["quizQuestionList"] = quiz_questions
         blog_data["extensions"]["quizTotalQuestionCount"] = len(quiz_questions)
         blog_data["quizPlayedTimes"] = 0
         blog_data["quizResults"] = {}
-
 
     table = db.get(f"x{ndcId}", "Blogs")
     await table.insert_one(blog_data)
@@ -948,9 +953,6 @@ async def tip_blog(request: Request, blogId: str, ndcId: int = 0):
     return Base.Answer({"tipInfo": updated_tip_info}, spent_time=timestamp() - t1)
 
 
-
-
-
 @blog_methods.get("/g/s/item/{blogId}/tipping/tipped-users-summary")
 @blog_methods.get("/x{ndcId}/s/item/{blogId}/tipping/tipped-users-summary")
 @blog_methods.get("/g/s/blog/{blogId}/tipping/tipped-users-summary")
@@ -982,7 +984,7 @@ async def get_blog_tiped_users_summary(
 
     tip_info = blog_info.get("tipInfo", {})
     tippers_list = tip_info.get("tippersList", [])
-    page = tippers_list[start:start + size]
+    page = tippers_list[start : start + size]
 
     ndc_users = connection.get(f"x{ndcId}", "Users")
     g_table = connection.get(table="Users")
@@ -995,7 +997,9 @@ async def get_blog_tiped_users_summary(
         if row is None or global_row is None:
             continue
 
-        row["tagList"] = list(set(global_row.get("tagList", []) + row.get("tagList", [])))
+        row["tagList"] = list(
+            set(global_row.get("tagList", []) + row.get("tagList", []))
+        )
         row["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
         if "isTeamMember" in global_row:
             row["isTeamMember"] = global_row["isTeamMember"]
@@ -1014,22 +1018,23 @@ async def get_blog_tiped_users_summary(
             ndcId=ndcId,
         )
 
-        tipped_user_list.append({
-            "tipper": tipper_user,
-            "totalTippedCoins": entry.get("totalTippedCoins", 0.0),
-            "lastTippedTime": entry.get("lastTippedTime"),
-            "lastThankedTime": entry.get("lastThankedTime"),
-            "isTipperAccessible": True,
-        })
+        tipped_user_list.append(
+            {
+                "tipper": tipper_user,
+                "totalTippedCoins": entry.get("totalTippedCoins", 0.0),
+                "lastTippedTime": entry.get("lastTippedTime"),
+                "lastThankedTime": entry.get("lastThankedTime"),
+                "isTipperAccessible": True,
+            }
+        )
 
     connection.close()
-    return Base.Answer({"tippedUserList": tipped_user_list}, spent_time=timestamp() - t1)
+    return Base.Answer(
+        {"tippedUserList": tipped_user_list}, spent_time=timestamp() - t1
+    )
 
 
-
-
-
-#idk todo (for pool blogs)
+# idk todo (for pool blogs)
 @blog_methods.get("/g/s/blog/{blogId}/poll/options-active-voterssummary")
 @blog_methods.get("/x{ndcId}/s/blog/{blogId}/poll/options-active-voterssummary")
 async def get_blog_poll_voters(
@@ -1064,9 +1069,6 @@ async def get_blog_poll_voters(
     return Base.Answer({"userProfileList": voters_list}, spent_time=timestamp() - t1)
 
 
-
-
-
 @blog_methods.post("/g/s/blog/{blogId}/quiz/result")
 @blog_methods.post("/x{ndcId}/s/blog/{blogId}/quiz/result")
 async def submit_quiz_result(request: Request, blogId: str, ndcId: int = 0):
@@ -1095,7 +1097,10 @@ async def submit_quiz_result(request: Request, blogId: str, ndcId: int = 0):
         if not q:
             continue
         opt_ids = set(answer.get("optIdList", []))
-        opts = {o["optId"]: o for o in q.get("extensions", {}).get("quizQuestionOptList", [])}
+        opts = {
+            o["optId"]: o
+            for o in q.get("extensions", {}).get("quizQuestionOptList", [])
+        }
         correct_ids = {oid for oid, o in opts.items() if o.get("isCorrect")}
         if opt_ids and opt_ids == correct_ids:
             correct_count += 1
@@ -1104,10 +1109,13 @@ async def submit_quiz_result(request: Request, blogId: str, ndcId: int = 0):
     is_finished = total_questions > 0 and correct_count == total_questions
 
     quiz_results = blog.get("quizResults", {})
-    user_result = quiz_results.get(trigger_uid, {
-        "normal": {"totalTimes": 0, "highestScore": 0, "isFinished": False},
-        "hell": {"totalTimes": 0, "highestScore": 0, "isFinished": False},
-    })
+    user_result = quiz_results.get(
+        trigger_uid,
+        {
+            "normal": {"totalTimes": 0, "highestScore": 0, "isFinished": False},
+            "hell": {"totalTimes": 0, "highestScore": 0, "isFinished": False},
+        },
+    )
     mode_key = "hell" if mode == 1 else "normal"
     mode_result = user_result[mode_key]
     mode_result["totalTimes"] += 1
@@ -1132,7 +1140,8 @@ async def submit_quiz_result(request: Request, blogId: str, ndcId: int = 0):
     ]
     beat_rate = (
         sum(1 for s in all_scores if s < score) / len(all_scores)
-        if len(all_scores) > 1 else 1.0
+        if len(all_scores) > 1
+        else 1.0
     )
 
     result = {
@@ -1180,7 +1189,7 @@ async def get_quiz_result_ranking(
         key=lambda kv: kv[1].get("normal", {}).get("highestScore", 0),
         reverse=True,
     )
-    page = ranking_entries[start:start + size]
+    page = ranking_entries[start : start + size]
 
     users_table = db.get(f"x{ndcId}", "Users")
     ranking_list = []
@@ -1191,27 +1200,29 @@ async def get_quiz_result_ranking(
         author_info = User.GetUserInfo(user_row, ndcId=ndcId, triggerUserId=trigger_uid)
         normal = res.get("normal", {})
         hell = res.get("hell", {})
-        ranking_list.append({
-            "author": author_info,
-            "quizResult": {
+        ranking_list.append(
+            {
+                "author": author_info,
+                "quizResult": {
+                    "highestMode": 0,
+                    "highestScore": normal.get("highestScore", 0),
+                    "latestMode": 0,
+                    "latestScore": normal.get("latestScore", 0),
+                    "totalTimes": normal.get("totalTimes", 0),
+                    "isFinished": normal.get("isFinished", False),
+                    "hellIsFinished": hell.get("isFinished", False),
+                    "beatRate": 0.0,
+                    "lastBeatRate": 0.0,
+                },
                 "highestMode": 0,
                 "highestScore": normal.get("highestScore", 0),
                 "latestMode": 0,
                 "latestScore": normal.get("latestScore", 0),
-                "totalTimes": normal.get("totalTimes", 0),
                 "isFinished": normal.get("isFinished", False),
                 "hellIsFinished": hell.get("isFinished", False),
                 "beatRate": 0.0,
-                "lastBeatRate": 0.0,
-            },
-            "highestMode": 0,
-            "highestScore": normal.get("highestScore", 0),
-            "latestMode": 0,
-            "latestScore": normal.get("latestScore", 0),
-            "isFinished": normal.get("isFinished", False),
-            "hellIsFinished": hell.get("isFinished", False),
-            "beatRate": 0.0,
-        })
+            }
+        )
 
     current_user_result = None
     if trigger_uid and trigger_uid in quiz_results:
@@ -1232,7 +1243,9 @@ async def get_quiz_result_ranking(
     db.close()
     return Base.Answer(
         {
-            "quizInBestQuizzes": blog.get("extensions", {}).get("quizInBestQuizzes", False),
+            "quizInBestQuizzes": blog.get("extensions", {}).get(
+                "quizInBestQuizzes", False
+            ),
             "quizPlayedTimes": blog.get("quizPlayedTimes", 0),
             "quizResultOfCurrentUser": current_user_result,
             "quizResultRankingList": ranking_list,
@@ -1242,9 +1255,8 @@ async def get_quiz_result_ranking(
     )
 
 
+# feeds
 
-
-#feeds
 
 @blog_methods.get("/g/s/feed/quiz-best-quizzes")
 @blog_methods.get("/x{ndcId}/s/feed/quiz-best-quizzes")
@@ -1330,17 +1342,14 @@ async def get_quiz_trending(
     )
 
 
-
-
-
-
-#poll
-
+# poll
 
 
 @blog_methods.post("/g/s/blog/{blogId}/poll/option/{optionId}/vote")
 @blog_methods.post("/x{ndcId}/s/blog/{blogId}/poll/option/{optionId}/vote")
-async def vote_poll_option(request: Request, blogId: str, optionId: str, ndcId: int = 0):
+async def vote_poll_option(
+    request: Request, blogId: str, optionId: str, ndcId: int = 0
+):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -1382,9 +1391,6 @@ async def vote_poll_option(request: Request, blogId: str, optionId: str, ndcId: 
     db.close()
 
     return Base.Answer({"blog": blog_info}, spent_time=timestamp() - t1)
-
-
-
 
 
 @blog_methods.post("/g/s/blog/{blogId}/poll/option")
@@ -1449,7 +1455,7 @@ async def get_poll_options_joined(
 
     options = blog.get("pollOptions", [])
     joined = [o for o in options if trigger_uid in o.get("voted", [])]
-    page = joined[start:start + size]
+    page = joined[start : start + size]
 
     polopt_list = [Blog.PollOption(o, trigger_uid) for o in page]
 

@@ -74,6 +74,7 @@ LiveCategory:
 
 """
 
+
 @chats.get("/x{ndcId}/s/live-layer/speed-dial-public")
 async def get_live_layer_chats(
     request: Request,
@@ -92,19 +93,19 @@ async def get_live_layer_chats(
         table = db.get(f"x{ndcId}", "Chats")
 
         featured_query = {
-                "featuredType": 5,
-                "$expr": {
-                    "$gt": [
-                        {
-                            "$add": [
-                                "$featuredTime",
-                                {"$multiply": ["$featuredDuration", 1000]},
-                            ]
-                        },
-                        int(t1 * 1000),
-                    ]
-                },
-            }
+            "featuredType": 5,
+            "$expr": {
+                "$gt": [
+                    {
+                        "$add": [
+                            "$featuredTime",
+                            {"$multiply": ["$featuredDuration", 1000]},
+                        ]
+                    },
+                    int(t1 * 1000),
+                ]
+            },
+        }
 
         featured_chats = [
             item
@@ -115,8 +116,11 @@ async def get_live_layer_chats(
 
         trigger_uid = request.state.session.get("uid")
         featuredChatThreadList = [
-            c for c in [
-                await Chat.Info(item["id"], trigger_uid=trigger_uid, connection=db, ndcId=ndcId)
+            c
+            for c in [
+                await Chat.Info(
+                    item["id"], trigger_uid=trigger_uid, connection=db, ndcId=ndcId
+                )
                 for item in featured_chats
             ]
             if c is not None
@@ -133,6 +137,7 @@ async def get_live_layer_chats(
         },
         spent_time=timestamp() - t1,
     )
+
 
 async def _get_chatting_chat_ids(ndcId: int) -> list[str]:
     redis = get_redis()
@@ -168,19 +173,16 @@ async def live_layer_public_chats(
             await Chat.Info(chatId, trigger_uid=trigger_uid, connection=con)
             for chatId in page_ids
         ]
-        
+
         answer = {
             "threadList": [
-                c for c in chats 
-                if c is not None and c.get("type") == ChatType.Public
+                c for c in chats if c is not None and c.get("type") == ChatType.Public
             ]
         }
     finally:
         con.close()
 
     return Base.Answer(answer, spent_time=timestamp() - t1)
-
-
 
 
 # chat search
@@ -237,8 +239,6 @@ async def user_search(
         )
 
 
-
-
 """
 {
   "categoryList": [
@@ -261,6 +261,7 @@ async def user_search(
 
 """
 
+
 @chats.get("/g/s/chat/thread/explore/categories")
 @chats.get("/x{ndcId}/s/chat/thread/explore/categories")  # ?need
 async def get_explore_chats(
@@ -276,10 +277,7 @@ async def get_explore_chats(
 
     request.state.session.get("uid")
     # con = await Database().init()
-    answer = {
-        "categoryList": [],
-        "communityInfoMapping": {}
-    }
+    answer = {"categoryList": [], "communityInfoMapping": {}}
 
     # con.close()
     return Base.Answer(answer, spent_time=timestamp() - t1)
@@ -374,15 +372,14 @@ async def vvchat_permission(request: Request, chatId: str, ndcId: int = 0):
         user = await table.find_one({"id": trigger_uid})
         if user is None:
             return Errors.NotEnoughRights(
-                        spent_time=timestamp() - t1, lang=request.state.lang
-                    )
+                spent_time=timestamp() - t1, lang=request.state.lang
+            )
 
         role = user.get("role", 0)
         if not UserRole.is_global_staff(role):
             return Errors.NotEnoughRights(
-                        spent_time=timestamp() - t1, lang=request.state.lang
-                    )
-
+                spent_time=timestamp() - t1, lang=request.state.lang
+            )
 
     # AltAmino client only needs a successful ack for this request.
     response = {
@@ -985,7 +982,7 @@ async def get_chat_messages(
                 ndcId=ndcId,
                 chatBubbleVersion=bubbleVersion,
                 chatBubbleId=bubbleId,
-                global_user=global_user
+                global_user=global_user,
             )
         )
 
@@ -1025,9 +1022,7 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
         allowed_types = [0, 2, 3] + CALL_STATE_MESSAGE_TYPES
         is_call_state = data["type"] in CALL_STATE_MESSAGE_TYPES
         if (
-            (
-                data["type"] not in allowed_types
-            )
+            (data["type"] not in allowed_types)
             or (
                 not is_call_state
                 and data.get("mediaType")
@@ -1042,8 +1037,16 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
                     or data["type"] != 0
                 )
             )
-            or (not is_call_state and data.get("mediaType", 0) == 110 and data["type"] != 2)
-            or (not is_call_state and data["type"] != 0 and data.get("content") is not None)
+            or (
+                not is_call_state
+                and data.get("mediaType", 0) == 110
+                and data["type"] != 2
+            )
+            or (
+                not is_call_state
+                and data["type"] != 0
+                and data.get("content") is not None
+            )
             or (
                 not is_call_state
                 and data["type"] == 3
@@ -1250,7 +1253,7 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
         ndcId=ndcId,
         chatBubbleId=bubbleId,
         chatBubbleVersion=bubbleVersion,
-        global_user=global_user
+        global_user=global_user,
     )
     answer = Base.Answer({"message": messageObj}, spent_time=timestamp() - t1)
 
@@ -1344,7 +1347,6 @@ async def get_message(request: Request, chatId: str, messageId: str, ndcId: int 
     xndc_users = db.get(f"x{ndcId}", "Users")
 
     user = await xndc_users.find_one({"id": message_data["authorId"]}) or {}
-
 
     globalBubbleId = user.get("bubbleId")
     chatBubbleId = user.get("chatBubbles", {}).get(chatId)
@@ -1470,27 +1472,34 @@ async def edit_message(request: Request, chatId: str, messageId: str, ndcId: int
 
     if message["authorId"] != trigger_uid:
         db.close()
-        return Errors.NotEnoughRights(spent_time=timestamp() - t1, lang=request.state.lang)
+        return Errors.NotEnoughRights(
+            spent_time=timestamp() - t1, lang=request.state.lang
+        )
 
     if message.get("messageType") == 100:
         db.close()
         return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
 
-
     if message.get("messageType") != 0 or message.get("mediaType", 0) != 0:
         db.close()
         return Errors.InvalidMessage(timestamp() - t1, lang=request.state.lang)
 
-    now_time = message["createdTime"].__class__.utcnow() if hasattr(message["createdTime"], "utcnow") else None
+    now_time = (
+        message["createdTime"].__class__.utcnow()
+        if hasattr(message["createdTime"], "utcnow")
+        else None
+    )
     edited_time = datetime.utcnow()
 
     await message_table.update_one(
         {"messageId": messageId},
-        {"$set": {
-            "content": data["content"],
-            "isEdited": True,
-            "editedTime": edited_time,
-        }}
+        {
+            "$set": {
+                "content": data["content"],
+                "isEdited": True,
+                "editedTime": edited_time,
+            }
+        },
     )
 
     updated_message = await message_table.find_one({"messageId": messageId})
@@ -1516,7 +1525,7 @@ async def edit_message(request: Request, chatId: str, messageId: str, ndcId: int
         ndcId=ndcId,
         chatBubbleId=bubbleId,
         chatBubbleVersion=bubbleVersion,
-        global_user=global_user
+        global_user=global_user,
     )
 
     answer = Base.Answer({"message": messageObj}, spent_time=timestamp() - t1)
@@ -1535,7 +1544,6 @@ async def edit_message(request: Request, chatId: str, messageId: str, ndcId: int
 
     db.close()
     return answer
-
 
 
 # update message
@@ -2109,28 +2117,29 @@ async def tip_chat(request: Request, chatId: str, ndcId: int = 0):
 
         message["threadId"] = chatId
         message["author"] = User.GetUserInfo(
-                    row2,
-                    triggerUserId=trigger_uid,
-                    extensions=row2.get("extensions"),
-                    ndcId=ndcId,
-                )
+            row2,
+            triggerUserId=trigger_uid,
+            extensions=row2.get("extensions"),
+            ndcId=ndcId,
+        )
 
         ws_send_obj = {
             "t": 1000,
-            "o": {
-                "ndcId": ndcId,
-                "membershipStatus": 1,
-                "chatMessage": message
-            }
+            "o": {"ndcId": ndcId, "membershipStatus": 1, "chatMessage": message},
         }
-        ws_send_obj["o"]["chatMessage"]["type"] = ws_send_obj["o"]["chatMessage"].pop("messageType")
+        ws_send_obj["o"]["chatMessage"]["type"] = ws_send_obj["o"]["chatMessage"].pop(
+            "messageType"
+        )
 
         target = chat_info.get("memberList", []) + chat_info.get("invitedList", [])
         asyncio.get_event_loop().create_task(send_admin_ws(ws_send_obj, target))
 
     return Base.Answer({"tipInfo": updated_tip_info}, spent_time=timestamp() - t1)
 
-async def _tip_log_list_response(connection, ndcId: str, chatId: str, start: int, size: int, t1):
+
+async def _tip_log_list_response(
+    connection, ndcId: str, chatId: str, start: int, size: int, t1
+):
     chat_table = connection.get(f"x{ndcId}", "Chats")
     chat_info = await chat_table.find_one({"id": chatId})
     if chat_info is None:
@@ -2149,14 +2158,19 @@ async def _tip_log_list_response(connection, ndcId: str, chatId: str, start: int
             "totalCoins": 0,
         },
         "paging": {
-            "nextPageToken": str(start + size) if start + size < len(tippers_list) else None,
+            "nextPageToken": str(start + size)
+            if start + size < len(tippers_list)
+            else None,
             "prevPageToken": str(max(start - size, 0)) if start > 0 else None,
         },
     }
 
+
 @chats.get("/x{ndcId}/s/chat/thread/{chatId}/tipping/tipped-users")
 @chats.get("/g/s/chat/thread/{chatId}/tipping/tipped-users")
-async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 25):
+async def tipped_users(
+    request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 25
+):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -2166,14 +2180,14 @@ async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int
     connection = await Database().init()
     chat_table = connection.get(f"x{ndcId}", "Chats")
     chat_info = await chat_table.find_one({"id": chatId})
-    print(chatId,": ",chat_info)
+    print(chatId, ": ", chat_info)
     if chat_info is None:
         connection.close()
         return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
 
     tip_info = chat_info.get("tipInfo", {})
     tippers_list = tip_info.get("tippersList", [])
-    page = tippers_list[start:start + size]
+    page = tippers_list[start : start + size]
 
     ndc_users = connection.get(f"x{ndcId}", "Users")
     g_table = connection.get(table="Users")
@@ -2186,7 +2200,9 @@ async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int
         if row is None or global_row is None:
             continue
 
-        row["tagList"] = list(set(global_row.get("tagList", []) + row.get("tagList", [])))
+        row["tagList"] = list(
+            set(global_row.get("tagList", []) + row.get("tagList", []))
+        )
         row["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
         if "isTeamMember" in global_row:
             row["isTeamMember"] = global_row["isTeamMember"]
@@ -2205,21 +2221,27 @@ async def tipped_users(request: Request, chatId: str, ndcId: int = 0, start: int
             ndcId=ndcId,
         )
 
-        tipped_user_list.append({
-            "tipper": tipper_user,
-            "totalTippedCoins": entry.get("totalTippedCoins", 0.0),
-            "lastTippedTime": entry.get("lastTippedTime"),
-            "lastThankedTime": entry.get("lastThankedTime"),
-            "isTipperAccessible": True,
-        })
+        tipped_user_list.append(
+            {
+                "tipper": tipper_user,
+                "totalTippedCoins": entry.get("totalTippedCoins", 0.0),
+                "lastTippedTime": entry.get("lastTippedTime"),
+                "lastThankedTime": entry.get("lastThankedTime"),
+                "isTipperAccessible": True,
+            }
+        )
 
     connection.close()
-    return Base.Answer({"tippedUserList": tipped_user_list}, spent_time=timestamp() - t1)
+    return Base.Answer(
+        {"tippedUserList": tipped_user_list}, spent_time=timestamp() - t1
+    )
 
 
 @chats.get("/x{ndcId}/s/chat/thread/{chatId}/tipping/tipped-users-summary")
 @chats.get("/g/s/chat/thread/{chatId}/tipping/tipped-users-summary")
-async def tipped_users_summary(request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 15):
+async def tipped_users_summary(
+    request: Request, chatId: str, ndcId: int = 0, start: int = 0, size: int = 15
+):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -2231,6 +2253,7 @@ async def tipped_users_summary(request: Request, chatId: str, ndcId: int = 0, st
         return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
 
     return Base.Answer(result, spent_time=timestamp() - t1)
+
 
 # invite to chat
 # /g/s/chat/thread/9978643e-5fa5-4b0b-82a4-70a5c71e32b1/member/invite

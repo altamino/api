@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from objects.types.store import DiscountStatus, RestrictType
 from helpers.processors.session import SessionProcessor
 
+
 def _iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -123,8 +124,6 @@ async def get_altamino_team(request: Request):
         db.close()
 
 
-
-
 async def _connected_uids() -> list[str]:
     r = get_redis()
     now = timestamp()
@@ -156,9 +155,7 @@ async def admin_online_users(request: Request, start: int = 0, size: int = 25):
         g_table = db.get(table="Users")
         profile_table = db.get("x0", "Users")
 
-        global_rows = {
-            r["id"]: r async for r in g_table.find({"id": {"$in": page}})
-        }
+        global_rows = {r["id"]: r async for r in g_table.find({"id": {"$in": page}})}
         profile_rows = {
             r["id"]: r async for r in profile_table.find({"id": {"$in": page}})
         }
@@ -169,18 +166,20 @@ async def admin_online_users(request: Request, start: int = 0, size: int = 25):
     for uid in page:
         g = global_rows.get(uid, {})
         p = profile_rows.get(uid, {})
-        users.append({
-            "uid": uid,
-            "nickname": p.get("nickname") or g.get("nickname"),
-            "icon": p.get("icon") or g.get("icon"),
-            "aminoId": g.get("aminoId") or p.get("aminoId"),
-            "role": g.get("role", 0),
-            "status": g.get("status", 0),
-        })
+        users.append(
+            {
+                "uid": uid,
+                "nickname": p.get("nickname") or g.get("nickname"),
+                "icon": p.get("icon") or g.get("icon"),
+                "aminoId": g.get("aminoId") or p.get("aminoId"),
+                "role": g.get("role", 0),
+                "status": g.get("status", 0),
+            }
+        )
 
-    return Base.Answer({"usersCount": total, "userList": users}, spent_time=timestamp() - t1)
-
-
+    return Base.Answer(
+        {"usersCount": total, "userList": users}, spent_time=timestamp() - t1
+    )
 
 
 @altteam.get("/g/s/altteam/{userId}")
@@ -894,7 +893,8 @@ async def disable_toggle(request: Request, t: str, action: str, objId: str):
     if result.matched_count == 0:
         db.close()
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
-    if t == "user" and action == "disable": await SessionProcessor.EndAllByUser(objId)
+    if t == "user" and action == "disable":
+        await SessionProcessor.EndAllByUser(objId)
     db.close()
     return Base.Answer(
         {},
@@ -902,13 +902,7 @@ async def disable_toggle(request: Request, t: str, action: str, objId: str):
     )
 
 
-
-
-
-
-
-
-#discover (TODO)
+# discover (TODO)
 
 DISCOVER_BANNERS = "DiscoverBanners"
 
@@ -1101,6 +1095,7 @@ async def discover_communities_search(
         )
     finally:
         db.close()
+
 
 @altteam.get("/g/s/altteam/discover/picks")
 async def discover_picks_list(request: Request):

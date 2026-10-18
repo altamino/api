@@ -188,7 +188,7 @@ async def ban_user_toggle(request: Request, uid: str, ndcId: int = 0):
         reason = ""
 
     db = await Database().init()
-    can_do, modLevel = await check_rights(
+    can_do, hammerModLevel = await check_rights(
         db, request.state.session["uid"], ndcId, only_gods=(ndcId == 0)
     )
     if not can_do:
@@ -200,8 +200,8 @@ async def ban_user_toggle(request: Request, uid: str, ndcId: int = 0):
     is_unban = "unban" in request.url.path
     status = 0 if is_unban else 9
 
-    can_do2, _ = await check_rights(db, uid, only_gods=True)
-    if status == 9 and can_do2:
+    can_do2, victimModLevel = await check_rights(db, uid)
+    if victimModLevel >= hammerModLevel or hammerModLevel < 2:
         return Errors.NotEnoughRights(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
@@ -217,7 +217,7 @@ async def ban_user_toggle(request: Request, uid: str, ndcId: int = 0):
             additionalValue=status,
             badgeColor="success" if status == 0 else "danger",
             reason=reason,
-            modLevel=modLevel,
+            modLevel=hammerModLevel,
             objectId=uid,
             objectType=0,
             authorId=request.state.session["uid"],
@@ -274,6 +274,12 @@ async def admin_action(
 
     if table_name == "Users" and operation != 114:
         badgeColor = "default"
+        _, victimModLevel = await check_rights(db, object_id)
+        if victimModLevel >= modLevel or modLevel < 2:
+            return Errors.NotEnoughRights(
+                spent_time=timestamp() - t1, lang=request.state.lang
+            )
+
         if operation == 18:
             badgeColor = "danger"
             await table.update_one(
@@ -393,6 +399,12 @@ async def send_notice(request: Request, ndcId: int = 0):
     except KeyError:
         db.close()
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+    _, victimModLevel = await check_rights(db, uid)
+    if victimModLevel >= modLevel or modLevel < 2:
+        return Errors.NotEnoughRights(
+            spent_time=timestamp() - t1, lang=request.state.lang
+        )
 
     notice = {
         "id": str(uuid4()),

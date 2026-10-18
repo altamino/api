@@ -548,6 +548,7 @@ async def get_community_guidelines(request: Request, ndcId: int = 0):
     finally:
         db.close()
 
+
 @communities.get("/x{ndcId}/s/user-profile")
 async def get_community_profiles(
     ndcId: int,
@@ -564,22 +565,20 @@ async def get_community_profiles(
         "curators": {"role": 101},
         "recent": {"status": {"$nin": [9, 10, 5]}},
         "summary": {"status": {"$nin": [9, 10, 5]}},  # banned, deleted, leaved
-        "featured": 
-            {
-                "featuredType": 4,
-                "$expr": {
-                    "$gt": [
-                        {
-                            "$add": [
-                                "$featuredTime",
-                                {"$multiply": ["$featuredDuration", 1000]},
-                            ]
-                        },
-                        int(t1 * 1000),
-                    ]
-                },
-            }
-        
+        "featured": {
+            "featuredType": 4,
+            "$expr": {
+                "$gt": [
+                    {
+                        "$add": [
+                            "$featuredTime",
+                            {"$multiply": ["$featuredDuration", 1000]},
+                        ]
+                    },
+                    int(t1 * 1000),
+                ]
+            },
+        },
     }
 
     query = queries.get(type)
@@ -816,8 +815,10 @@ _BROWSING_TOPIC_KINDS = {
     "users-chatting-private": "chatting-private",
 }
 
+
 def _pattern_browsing(ndcId: str, kind: str, target_id: str) -> str:
     return f"x{ndcId}:browsing:{kind}:{target_id}:*"
+
 
 async def _get_browsing_uids(ndcId: str, kind: str, target_id: str | None) -> list[str]:
     redis = get_redis()
@@ -830,6 +831,7 @@ async def _get_browsing_uids(ndcId: str, kind: str, target_id: str | None) -> li
         uids.append(key.split(":")[-1])
     print(uids)
     return uids
+
 
 async def _get_online_uids(ndcId: int, topic: str | None = None) -> list[str]:
     redis = get_redis()
@@ -851,6 +853,7 @@ async def _get_online_uids(ndcId: int, topic: str | None = None) -> list[str]:
         uids.append(key.split(":")[2])
     return uids
 
+
 async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict]:
     if not uids:
         return []
@@ -858,10 +861,9 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
     try:
         table = db.get(f"x{ndcId}", "Users")
         g_table = db.get(table="Users")
-        cursor = table.find({
-            "id": {"$in": uids},
-            "onlineStatus": {"$ne": OnlineStatus.OFFLINE}
-        })
+        cursor = table.find(
+            {"id": {"$in": uids}, "onlineStatus": {"$ne": OnlineStatus.OFFLINE}}
+        )
         rows_by_id = {row["id"]: row async for row in cursor}
         result = []
         for u in uids:
@@ -869,7 +871,6 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
                 row = rows_by_id[u]
                 async with await StoreService.create(u, ndcId) as svc:
                     row["iconFrame"] = await svc.frame_icon(row.get("frameId"))
-
 
                 uid = row["id"]
                 global_row = await g_table.find_one({"id": uid})
@@ -888,13 +889,10 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
                     if global_row.get("status", 0) in [9, 10]:
                         row["status"] = global_row["status"]
                     if global_row.get("extensions", {}).get("__disabledLevel__"):
-                        row["extensions"]["__disabledLevel__"] = global_row["extensions"][
-                            "__disabledLevel__"
-                        ]
+                        row["extensions"]["__disabledLevel__"] = global_row[
+                            "extensions"
+                        ]["__disabledLevel__"]
                 row["onlineStatus"] = row.get("onlineStatus", OnlineStatus.ONLINE)
-
-
-
 
                 result.append(
                     User.OwnNonSensetiveProfile(row, ndcId=ndcId, membershipStatus=1)
@@ -904,8 +902,9 @@ async def _get_profiles_for_live_layer(ndcId: int, uids: list[str]) -> list[dict
         db.close()
 
 
-#https://dev-service.altamino.top/api/v1/x3/s/live-layer/public-chats?start=0&size=5
-#https://dev-service.altamino.top/api/v1/x3/s/live-layer/blogs?start=0&size=5
+# https://dev-service.altamino.top/api/v1/x3/s/live-layer/public-chats?start=0&size=5
+# https://dev-service.altamino.top/api/v1/x3/s/live-layer/blogs?start=0&size=5
+
 
 @communities.get("/g/s/live-layer")
 @communities.get("/x{ndcId}/s/live-layer")
@@ -944,7 +943,6 @@ async def live_layer_topic(
     )
 
 
-
 async def _get_chatting_uids(ndcId: int) -> list[str]:
     redis = get_redis()
     pattern = f"x{ndcId}:chat:*:chatting"
@@ -966,7 +964,6 @@ async def _get_browsing_kind_uids(ndcId: int, kind: str) -> list[str]:
     return list(uids)
 
 
-
 async def _homepage_topics(ndcId: int) -> list[dict]:
     chatting_uids = await _get_chatting_uids(ndcId)
     chatting_profiles = await _get_profiles_for_live_layer(ndcId, chatting_uids)
@@ -986,9 +983,14 @@ async def _homepage_topics(ndcId: int) -> list[dict]:
             users_list=blog_profiles,
         ),
     ]
-    for category in ("users-playing-quizzes", "users-polling-polls",
-                      "users-voting-blogs", "users-commenting-blogs",
-                      "users-browsing-pages", "users-live-chatting"):
+    for category in (
+        "users-playing-quizzes",
+        "users-polling-polls",
+        "users-voting-blogs",
+        "users-commenting-blogs",
+        "users-browsing-pages",
+        "users-live-chatting",
+    ):
         topics.append(Base.LiveLayerTopic(topic_name=f"ndtopic:x{ndcId}:{category}"))
     return topics
 
@@ -997,7 +999,6 @@ async def _homepage_topics(ndcId: int) -> list[dict]:
 @communities.get("/x{ndcId}/s/live-layer/homepage")
 async def live_layer(request: Request, ndcId: int = 0):
     return Base.Answer({"liveLayerList": await _homepage_topics(ndcId)})
-
 
 
 @communities.post("/g/s/community/joined/reorder")
@@ -1896,11 +1897,6 @@ async def _set_collection_activation(
     return Base.Answer({"stickerCollection": collection}, spent_time=timestamp() - t1)
 
 
-
-
-
-
-
 @communities.post("/x{ndcId}/s/tipping")
 @communities.post("/g/s/blog/tipping")
 @turtlelimiter(limit=5, period=TurtleTime.minute, tag="tip")
@@ -1930,17 +1926,21 @@ async def tipping(request: Request, ndcId: int = 0):
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
     transactionId = data.get("tippingContext", {}).get("transactionId", str(uuid4()))
 
-    #remake it later
+    # remake it later
     tables = {}
-    for x in [BlogType.Basic, BlogType.Wiki, BlogType.Question, BlogType.Vote, BlogType.Image]:
+    for x in [
+        BlogType.Basic,
+        BlogType.Wiki,
+        BlogType.Question,
+        BlogType.Vote,
+        BlogType.Image,
+    ]:
         tables[x] = f"Blogs"
 
     table = tables.get(objectType)
     if not table:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
-    
 
-    
     db = await Database().init()
     users_table = db.get(table="Users")
     sender = await users_table.find_one({"id": trigger_uid})
@@ -2009,17 +2009,6 @@ async def tipping(request: Request, ndcId: int = 0):
     return Base.Answer({"tipInfo": updated_tip_info}, spent_time=timestamp() - t1)
 
 
-
-
-
-
-
-
-
-
-
-
-
 @communities.get("/g/s-x{ndcId}/community/leaderboard")
 @communities.get("/x{ndcId}/s/community/leaderboard")
 async def get_leaderboard(
@@ -2044,14 +2033,17 @@ async def get_leaderboard(
         today = local_date(tz)
 
         all_users = [
-            u async for u in users_table.find({"checkInHistory": {"$exists": True, "$ne": {}}})
+            u
+            async for u in users_table.find(
+                {"checkInHistory": {"$exists": True, "$ne": {}}}
+            )
         ]
         for u in all_users:
             u["_streak"] = compute_streak(u.get("checkInHistory", {}) or {}, today)
 
         all_users = [u for u in all_users if u["_streak"] > 0]
         all_users.sort(key=lambda u: u["_streak"], reverse=True)
-        users = all_users[start:start + size]
+        users = all_users[start : start + size]
     else:
         sort_field_map = {
             1: "minutesPerDay",

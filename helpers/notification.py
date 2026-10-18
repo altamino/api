@@ -1,5 +1,3 @@
-
-
 import uuid
 from time import time as timestamp
 
@@ -44,24 +42,26 @@ async def create_notification(
         if target_uid == authorUid:
             continue
 
-        documents.append({
-            "id": _new_id(),
-            "uid": target_uid,
-            "authorUid": authorUid,
-            "type": type,
-            "parentType": parentType,
-            "parentId": parentId,
-            "parentText": parentText,
-            "objectId": objectId,
-            "objectType": objectType,
-            "objectSubtype": objectSubtype,
-            "objectText": objectText,
-            "contextText": contextText,
-            "contextValue": contextValue,
-            "contextNdcId": contextNdcId,
-            "createdTime": created_time,
-            "read": False,
-        })
+        documents.append(
+            {
+                "id": _new_id(),
+                "uid": target_uid,
+                "authorUid": authorUid,
+                "type": type,
+                "parentType": parentType,
+                "parentId": parentId,
+                "parentText": parentText,
+                "objectId": objectId,
+                "objectType": objectType,
+                "objectSubtype": objectSubtype,
+                "objectText": objectText,
+                "contextText": contextText,
+                "contextValue": contextValue,
+                "contextNdcId": contextNdcId,
+                "createdTime": created_time,
+                "read": False,
+            }
+        )
 
     if documents:
         await table.insert_many(documents)
@@ -89,16 +89,18 @@ async def create_notice(
     documents = []
 
     for uid in target_uids:
-        documents.append({
-            "id": _new_id(),
-            "notificationId": notificationId or _new_id(),
-            "targetUid": uid,
-            "operatorUid": operatorUid,
-            "title": title,
-            "type": type,
-            "status": status,
-            "createdTime": created_time,
-        })
+        documents.append(
+            {
+                "id": _new_id(),
+                "notificationId": notificationId or _new_id(),
+                "targetUid": uid,
+                "operatorUid": operatorUid,
+                "title": title,
+                "type": type,
+                "status": status,
+                "createdTime": created_time,
+            }
+        )
 
     if documents:
         await table.insert_many(documents)

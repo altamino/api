@@ -84,7 +84,6 @@ class CacheProcessor:
 
         return await redis.unlink(full_key)
 
-
     @staticmethod
     async def SetAdd(
         key: str,

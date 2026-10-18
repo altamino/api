@@ -83,7 +83,7 @@ class Chat:
         history_table=None,
         chatBubbleVersion=None,
         chatBubbleId=None,
-        global_user=None
+        global_user=None,
     ):
         extensions = data.get("extensions", {})
         if extensions is None:
@@ -133,18 +133,15 @@ class Chat:
                 ]
             xndc_data["isBot"] = global_row.get("isBot", False)
 
-
-
         async with await StoreService.create(data["authorId"], ndcId) as svc:
             xndc_data["iconFrame"] = await svc.frame_icon(xndc_data.get("frameId"))
 
         ex = xndc_data.get("extensions", {})
-        xndc_data["icon"] = None if ex.get("hideUserProfile", False) or xndc_data.get("icon") == "" else xndc_data.get("icon")
-
-
-
-
-
+        xndc_data["icon"] = (
+            None
+            if ex.get("hideUserProfile", False) or xndc_data.get("icon") == ""
+            else xndc_data.get("icon")
+        )
 
         result = {
             "includedInSummary": True,
@@ -167,7 +164,6 @@ class Chat:
         if chatBubbleId:
             result["chatBubbleId"] = chatBubbleId
             result["chatBubbleVersion"] = chatBubbleVersion or 1
-
 
         return result
 

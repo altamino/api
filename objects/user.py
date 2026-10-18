@@ -158,7 +158,7 @@ class User:
                 # None if ndcId == 0 else row["consecutiveDaysOfCheckIns"]
                 None
             ),  # [TODO] when communitues will be implemented do that
-            "onlineStatus": row.get("onlineStatus",OnlineStatus.OFFLINE), 
+            "onlineStatus": row.get("onlineStatus", OnlineStatus.OFFLINE),
             "isNicknameVerified": bool(row.get("isVerified", False)),
             "verified": bool(len(row.get("tagList", []))),  # this fixes tagList! :D
             "notificationSubscriptionStatus": 0,
@@ -198,7 +198,11 @@ class User:
         if iconFrame is None:
             iconFrame = {}
 
-        icon = None if extensions.get("hideUserProfile", False) or row.get("icon") == "" else row.get("icon")
+        icon = (
+            None
+            if extensions.get("hideUserProfile", False) or row.get("icon") == ""
+            else row.get("icon")
+        )
 
         return {
             "iconFrameId": iconFrame.get("frameId"),
@@ -252,7 +256,7 @@ class User:
                 # None if ndcId == 0 else row["consecutiveDaysOfCheckIns"]
                 None
             ),  # [TODO] when communitues will be implemented do that
-            "onlineStatus": row.get("onlineStatus",OnlineStatus.OFFLINE), 
+            "onlineStatus": row.get("onlineStatus", OnlineStatus.OFFLINE),
             "isNicknameVerified": bool(row.get("isVerified", False)),
             "verified": bool(len(row.get("tagList", []))),  # this fixes tagList! :D
             "notificationSubscriptionStatus": 0,
@@ -293,7 +297,11 @@ class User:
         iconFrame = row.get("iconFrame")
         if iconFrame is None:
             iconFrame = {}
-        icon = None if extensions.get("hideUserProfile", False) or row.get("icon") == "" else row.get("icon")
+        icon = (
+            None
+            if extensions.get("hideUserProfile", False) or row.get("icon") == ""
+            else row.get("icon")
+        )
         return {
             "iconFrameId": iconFrame.get("frameId"),
             "avatarFrame": iconFrame or None,
@@ -354,7 +362,7 @@ class User:
             "consecutiveCheckInDays": (
                 None if ndcId == 0 else row.get("consecutiveCheckInDays", 0)
             ),  # [TODO] when communitues will be implemented do that
-            "onlineStatus": row.get("onlineStatus",OnlineStatus.OFFLINE),
+            "onlineStatus": row.get("onlineStatus", OnlineStatus.OFFLINE),
             "isNicknameVerified": bool(row.get("isVerified", False)),
             "verified": bool(len(row.get("tagList", []))),  # this fixes tagList! :D
             "notificationSubscriptionStatus": 0,

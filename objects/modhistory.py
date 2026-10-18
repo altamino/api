@@ -1,6 +1,7 @@
 from helpers.i18n import i18n
 from helpers import uuid_to_long
 
+
 def _get_right_op_name(data: dict, lang: str):
     op = data["operation"]
     if op == 110:
@@ -24,7 +25,6 @@ def _get_right_op_name(data: dict, lang: str):
     }
     key = mapmen.get(op, f"mod.op.{op}.action")
     return i18n.get(key, lang)
-
 
 
 class ModHistory:

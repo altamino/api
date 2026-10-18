@@ -1,11 +1,11 @@
 class NotificationType:
-    USER_MEMBERSHIP = 1                         
-    USER_MEMBERSHIP_INVITATION = 2              
-    COMMENT = 3                                  
-    COMMENT_QUOTED = 4                         
-    VOTE_UP = 9                                  
-    VOTE_DOWN = 10                             
-    REPOST = 11                                  
+    USER_MEMBERSHIP = 1
+    USER_MEMBERSHIP_INVITATION = 2
+    COMMENT = 3
+    COMMENT_QUOTED = 4
+    VOTE_UP = 9
+    VOTE_DOWN = 10
+    REPOST = 11
     POLL_OPTION_ADDED = 12
     POLL_OPTION_APPROVED = 13
     POLL_OPTION_VOTED_UP = 14
@@ -13,7 +13,7 @@ class NotificationType:
     POLL_ENDED_OWNER = 16
     POLL_ENDED_CONTESTANT = 17
     KNOWLEDGE_BASE_REQUEST_APPROVED = 24
-    ACTIVITIES_BLOG = 26                         
+    ACTIVITIES_BLOG = 26
     ACTIVITIES_WIKI = 27
     ACTIVITIES_CHAT_THREAD = 28
     INVITE_AUDIO_CHAT = 29
@@ -26,10 +26,10 @@ class NotificationType:
     ADD_CUSTOM_TITLE = 36
     INVITE_SCREENING_ROOM = 37
     CREATE_SCREENING_ROOM = 38
-    TIPPING_FORWARD = 55                       
-    TIPPING_THANKS = 57                          
-    FANS_SUBSCRIBE = 60                         
-    FANS_THANKS = 61                            
+    TIPPING_FORWARD = 55
+    TIPPING_THANKS = 57
+    FANS_SUBSCRIBE = 60
+    FANS_THANKS = 61
     INFLUENCER_ACTIVITY_BLOG = 62
     INFLUENCER_ACTIVITY_CHAT_THREAD = 63
     INFLUENCER_ACTIVITY_ITEM = 64

@@ -172,7 +172,9 @@ async def full_reminder_configs(request: Request, ndcId: int = 0):
 
 @configurations.get("/g/s/auth/config-v2")
 async def some_auth_config(request: Request):
-    return Base.Answer({"mobileSignUpProviderList": []})#[8] <- allow phone register & login
+    return Base.Answer(
+        {"mobileSignUpProviderList": []}
+    )  # [8] <- allow phone register & login
 
 
 @configurations.post("/g/s/client-config")
@@ -357,6 +359,7 @@ async def feed_community(
     finally:
         db.close()
 
+
 # temp
 @configurations.get("/g/s/topic/0/feed/topic")
 async def feed_topic(
@@ -421,14 +424,25 @@ async def feed_story(
         spent_time=timestamp() - t1,
     )
 
+
 _BANNER_MODULE_ID = "1c4ea74e-b500-4c72-821f-0677a5078bdc"
 _DEFAULT_BANNERS = [
-    ("https://media.altamino.top/always-static/welcome.jpg", "", "https://t.me/altamino"),
-    ("https://media.altamino.top/always-static/warning.jpg", "", "https://github.com/altamino"),
+    (
+        "https://media.altamino.top/always-static/welcome.jpg",
+        "",
+        "https://t.me/altamino",
+    ),
+    (
+        "https://media.altamino.top/always-static/warning.jpg",
+        "",
+        "https://github.com/altamino",
+    ),
 ]
 
 
-def _banner_item(position: int, image_url: str, landing_url: str, deep_link: str = "ndc://e") -> dict:
+def _banner_item(
+    position: int, image_url: str, landing_url: str, deep_link: str = "ndc://e"
+) -> dict:
     n = position + 1
     return {
         "objectId": str(n),
@@ -449,6 +463,7 @@ def _banner_item(position: int, image_url: str, landing_url: str, deep_link: str
         ),
         "objectType": 153,
     }
+
 
 @configurations.get("/g/s/topic/0/feed/banner-ads")
 async def banner(

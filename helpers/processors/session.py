@@ -3,7 +3,6 @@ from .cache import CacheProcessor
 from secrets import token_urlsafe
 
 
-
 class SessionProcessor:
     """
     Processor for making and getting sessions.
@@ -19,7 +18,7 @@ class SessionProcessor:
         if isinstance(session, bytes):
             session = session.decode()
         if session.startswith(SessionProcessor.PREFIX):
-            session = session[len(SessionProcessor.PREFIX):]
+            session = session[len(SessionProcessor.PREFIX) :]
         return session
 
     @staticmethod

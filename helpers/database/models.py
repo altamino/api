@@ -17,6 +17,7 @@ from time import time
 
 from helpers import uuid_to_long
 
+
 def tmstmpe1():
     return int(time())
 
@@ -178,8 +179,6 @@ class Community:
         timestamp = Integer(load_default=tmstmpe1000)
         extensions = Dict(load_default={}, allow_none=True)
         createdTime = String(load_default=dttmn)
-
-
 
     class Users(Schema):
         id = UUID(required=True, metadata={"as_string": True})

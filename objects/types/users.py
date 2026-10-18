@@ -21,10 +21,10 @@ class UserStatus:
         return status in cls.Valid
 
 
-
 class OnlineStatus:
     OFFLINE: int = 2
     ONLINE: int = 1
+
 
 class UserRole:
     # --- Base and Local Community Roles ---

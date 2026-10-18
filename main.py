@@ -50,9 +50,10 @@ async def log_requests(request, call_next):
     )
     response = await call_next(request)
     ms = (time.perf_counter() - start) * 1000
-    try:uid = request.state.session.get("uid")
+    try:
+        uid = request.state.session.get("uid")
     except:
-        uid=None
+        uid = None
     log.info(
         "%s | %s %s | %s | %.1fms | uid=%s",
         ip,
@@ -63,8 +64,6 @@ async def log_requests(request, call_next):
         uid,
     )
     return response
-
-
 
 
 @app.get("/")

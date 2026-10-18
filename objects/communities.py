@@ -270,19 +270,21 @@ ACTIVITY_WINDOW_DAYS = 7
 ACTIVE_TIME_THRESHOLD_SECONDS = 300
 
 
-EXPECTED_BASE = 0.92 
-EXPECTED_DECAY = 0.265 
-EXPECTED_MIN = 0.05 
-EXPECTED_MAX = 0.60 
+EXPECTED_BASE = 0.92
+EXPECTED_DECAY = 0.265
+EXPECTED_MIN = 0.05
+EXPECTED_MAX = 0.60
+
 
 def _expected_active_ratio(total: int) -> float:
-    raw = EXPECTED_BASE * (total ** -EXPECTED_DECAY)
+    raw = EXPECTED_BASE * (total**-EXPECTED_DECAY)
     return max(EXPECTED_MIN, min(EXPECTED_MAX, raw))
 
 
 HEAT_AT_EXPECTED = 0.70
 OVERPERFORM_CAP = 2.5
 MIN_MEMBERS_FULL_TRUST = 8
+
 
 def _ratio_to_heat(ratio: float, expected: float) -> float:
     r = ratio / expected
@@ -350,6 +352,7 @@ async def _compute_community_heat(table, tz_offset_days: int = 0) -> float:
 
     return round(max(0.0, min(heat, 1.0)), 2)
 
+
 class Communities:
     @staticmethod
     def ModuleInfo(module_data: dict):
@@ -379,7 +382,9 @@ class Communities:
         table = connection.get(f"x{ndcId}", "Users")
         host_xndcId = await table.find_one({"id": data["agent"]})
         agent = User.OwnNonSensetiveProfile(host_xndcId, ndcId) if host_xndcId else None
-        community_head_list =  await _get_community_head_list(table, ndcId, data["agent"]) #it's work, but idk why app need it, so i will not add it for now
+        community_head_list = await _get_community_head_list(
+            table, ndcId, data["agent"]
+        )  # it's work, but idk why app need it, so i will not add it for now
         community_heat = await _compute_community_heat(table)
 
         membershipStatus = 0

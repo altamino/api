@@ -76,6 +76,7 @@ async def change_aminoId(request: Request):
 
     return Base.Answer(spent_time=timestamp() - t1)
 
+
 @profile_methods.get("/g/s/user-profile/search")
 @profile_methods.get("/x{ndcId}/s/user-profile/search")
 async def user_search(
@@ -143,7 +144,7 @@ async def user_search(
         for item in unique_users:
             g_row = await g_users.find_one({"id": item["id"]})
             merged = (g_row or {}) | item
-            if g_row.get("status") != 0 :
+            if g_row.get("status") != 0:
                 merged["status"] = g_row.get("status", 0)
 
             async with await StoreService.create(item["id"], ndcId) as svc:
@@ -244,6 +245,7 @@ async def reminder_configs(
         spent_time=timestamp() - t1,
     )
 
+
 @profile_methods.get("/x{ndcId}/s/check-in/stats/{userId}")
 async def check_in_stats(
     request: Request,
@@ -273,6 +275,7 @@ async def check_in_stats(
         },
         spent_time=timestamp() - t1,
     )
+
 
 @profile_methods.get("/x{ndcId}/s/check-in/history")
 async def check_in_history(
@@ -750,7 +753,6 @@ async def unfollow_user(uid: str, request: Request, ndcId: int = 0):
     return Base.Answer(spent_time=timestamp() - t1)
 
 
-
 async def _get_push_settings_table(db, ndcId: int):
     if ndcId == 0:
         return db.get(table="Users")
@@ -844,9 +846,6 @@ async def set_user_profile_push(request: Request, ndcId: int = 0):
     )
 
 
-
-
-
 async def _get_online_uids(ndcId: int) -> list[str]:
     redis = get_redis()
     pattern = f"x{ndcId}:online:*"
@@ -871,7 +870,9 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
     if row2 is None:
         return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
     comments_table = db.get(f"x{ndcId}", "Comments")
-    row2["commentsCount"] = await comments_table.count_documents({"rootId": f"profile:{uid}"})
+    row2["commentsCount"] = await comments_table.count_documents(
+        {"rootId": f"profile:{uid}"}
+    )
 
     global_row = await g_table.find_one({"id": uid})
     if global_row:
@@ -904,7 +905,7 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
     db.close()
     async with await StoreService.create(trigger_uid, ndcId) as svc:
         row2["iconFrame"] = await svc.frame_icon(row2.get("frameId"))
-    
+
     return Base.Answer(
         {
             "userProfile": User.GetUserInfo(
@@ -974,8 +975,6 @@ async def edit_user_info(uid, request: Request, ndcId=0):
 
     if len(preparedQueries) == 0 and lang is None:
         return Base.Answer({"exceptions": "No data provided."})
-
-
 
     db = await Database().init()
 
@@ -1101,6 +1100,7 @@ async def get_wallet_ads_info(request: Request):
         spent_time=timestamp() - t1,
     )
 
+
 @profile_methods.post("/x{ndcId}/s/user-profile/{uid}/online-status")
 async def online_status(uid: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
@@ -1111,26 +1111,25 @@ async def online_status(uid: str, request: Request, ndcId: int = 0):
     if suid != uid:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
-    try:data = await request.json()
+    try:
+        data = await request.json()
     except Exception:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
     onlineStatus = data.get("onlineStatus")
-    if onlineStatus not in [1, 2]: 
+    if onlineStatus not in [1, 2]:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
     db = await Database().init()
     table = db.get(f"x{ndcId}", "Users")
 
     if "moodStickerId" in data:
         stickerId = data["moodStickerId"]
-        isBuiltInSticker = stickerId.startswith("e/") #todo checking
+        isBuiltInSticker = stickerId.startswith("e/")  # todo checking
         await table.update_one({"id": uid}, {"$set": {"moodStickerId": stickerId}})
     await table.update_one({"id": uid}, {"$set": {"onlineStatus": onlineStatus}})
-    
+
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
-
-
 
 
 async def _get_block_lists(table, trigger_uid: str) -> dict:
@@ -1151,10 +1150,11 @@ async def _get_block_lists(table, trigger_uid: str) -> dict:
     }
 
 
-
 @profile_methods.get("/x{ndcId}/s/block/full-list")
 @profile_methods.get("/g/s/block/full-list")
-async def get_block_full_list(request: Request, start: int = 0, size: int = 25, ndcId: int = 0):
+async def get_block_full_list(
+    request: Request, start: int = 0, size: int = 25, ndcId: int = 0
+):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -1174,8 +1174,8 @@ async def get_block_full_list(request: Request, start: int = 0, size: int = 25, 
     db.close()
 
     result = {
-        "blockedUidList": result["blockedUidList"][start:start + size],
-        "blockerUidList": result["blockerUidList"][start:start + size],
+        "blockedUidList": result["blockedUidList"][start : start + size],
+        "blockerUidList": result["blockerUidList"][start : start + size],
     }
 
     return Base.Answer(result, spent_time=timestamp() - t1)
@@ -1183,7 +1183,9 @@ async def get_block_full_list(request: Request, start: int = 0, size: int = 25, 
 
 @profile_methods.get("/x{ndcId}/s/block")
 @profile_methods.get("/g/s/block")
-async def get_blocked_users(request: Request, start: int = 0, size: int = 25, ndcId: int = 0):
+async def get_blocked_users(
+    request: Request, start: int = 0, size: int = 25, ndcId: int = 0
+):
     t1 = timestamp()
     if not request.state.session["validsession"]:
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
@@ -1201,7 +1203,7 @@ async def get_blocked_users(request: Request, start: int = 0, size: int = 25, nd
         return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
 
     blocked_uids = row.get("blockedUidList", [])
-    page = blocked_uids[start:start + size]
+    page = blocked_uids[start : start + size]
 
     user_profile_list = []
     online_uids = await _get_online_uids(ndcId) if page else set()
@@ -1256,6 +1258,7 @@ async def get_blocked_users(request: Request, start: int = 0, size: int = 25, nd
         spent_time=timestamp() - t1,
     )
 
+
 @profile_methods.post("/x{ndcId}/s/block/{userId}")
 @profile_methods.post("/g/s/block/{userId}")
 async def block_user(request: Request, userId: str, ndcId: int = 0):
@@ -1282,8 +1285,7 @@ async def block_user(request: Request, userId: str, ndcId: int = 0):
         return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
 
     await table.update_one(
-        {"id": trigger_uid},
-        {"$addToSet": {"blockedUidList": userId}}
+        {"id": trigger_uid}, {"$addToSet": {"blockedUidList": userId}}
     )
 
     result = await _get_block_lists(table, trigger_uid)
@@ -1303,10 +1305,7 @@ async def unblock_user(request: Request, userId: str, ndcId: int = 0):
     db = await Database().init()
     table = db.get(table="Users")
 
-    await table.update_one(
-        {"id": trigger_uid},
-        {"$pull": {"blockedUidList": userId}}
-    )
+    await table.update_one({"id": trigger_uid}, {"$pull": {"blockedUidList": userId}})
 
     result = await _get_block_lists(table, trigger_uid)
     db.close()

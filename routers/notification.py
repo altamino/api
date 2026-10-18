@@ -13,7 +13,6 @@ notification_methods = APIRouter()
 notification_methods.route_class = CachableRoute
 
 
-
 @notification_methods.get("/g/s/notification")
 @notification_methods.get("/x{ndcId}/s/notification")
 async def get_notifications(
@@ -58,7 +57,9 @@ async def get_notifications(
                 author_row["tagList"] = list(
                     set(global_row.get("tagList", []) + author_row.get("tagList", []))
                 )
-                author_row["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+                author_row["isPaidSubscriber"] = global_row.get(
+                    "isPaidSubscriber", False
+                )
                 if "isTeamMember" in global_row:
                     author_row["isTeamMember"] = global_row["isTeamMember"]
                 if "isVerified" in global_row:
@@ -73,29 +74,32 @@ async def get_notifications(
                 ndcId=ndcId,
             )
 
-        notification_list.append({
-            "notificationId": doc.get("id"),
-            "ndcId": ndcId,
-            "type": doc.get("type"),
-            "parentType": doc.get("parentType"),
-            "parentId": doc.get("parentId"),
-            "parentText": doc.get("parentText"),
-            "objectId": doc.get("objectId"),
-            "objectType": doc.get("objectType"),
-            "objectSubtype": doc.get("objectSubtype"),
-            "objectText": doc.get("objectText"),
-            "contextText": doc.get("contextText"),
-            "contextValue": doc.get("contextValue"),
-            "contextNdcId": doc.get("contextNdcId"),
-            "createdTime": doc.get("createdTime"),
-            "author": author_profile,
-        })
+        notification_list.append(
+            {
+                "notificationId": doc.get("id"),
+                "ndcId": ndcId,
+                "type": doc.get("type"),
+                "parentType": doc.get("parentType"),
+                "parentId": doc.get("parentId"),
+                "parentText": doc.get("parentText"),
+                "objectId": doc.get("objectId"),
+                "objectType": doc.get("objectType"),
+                "objectSubtype": doc.get("objectSubtype"),
+                "objectText": doc.get("objectText"),
+                "contextText": doc.get("contextText"),
+                "contextValue": doc.get("contextValue"),
+                "contextNdcId": doc.get("contextNdcId"),
+                "createdTime": doc.get("createdTime"),
+                "author": author_profile,
+            }
+        )
 
     db.close()
     return Base.Answer(
         {"notificationList": notification_list},
         spent_time=timestamp() - t1,
     )
+
 
 @notification_methods.get("/g/s/notice")
 @notification_methods.get("/x{ndcId}/s/notice")
@@ -134,32 +138,41 @@ async def get_notices(
     for doc in docs:
         target_user = await users_table.find_one({"id": doc.get("targetUid")})
         operator = await users_table.find_one({"id": doc.get("operatorUid")})
-        
-        notice_list.append({
-            "notificationId": doc.get("notificationId"),
-            "noticeId": doc.get("id"),
-            "ndcId": ndcId,
-            "title": doc.get("title"),
-            "targetUser": {
-                "uid": target_user.get("id") if target_user else None,
-                "nickname": target_user.get("nickname") if target_user else None,
-                "level": get_level(target_user.get("reputation", 0)) if target_user else None,
-                "reputation": target_user.get("reputation") if target_user else None,
-            },
-            "operator": {
-                "uid": operator.get("id") if operator else None,
-                "nickname": operator.get("nickname") if operator else None,
-                "level": get_level(operator.get("reputation", 0)) if operator else None,
-                "reputation": operator.get("reputation") if operator else None,
-                "role": operator.get("role") if operator else None,
-            },
-        })
+
+        notice_list.append(
+            {
+                "notificationId": doc.get("notificationId"),
+                "noticeId": doc.get("id"),
+                "ndcId": ndcId,
+                "title": doc.get("title"),
+                "targetUser": {
+                    "uid": target_user.get("id") if target_user else None,
+                    "nickname": target_user.get("nickname") if target_user else None,
+                    "level": get_level(target_user.get("reputation", 0))
+                    if target_user
+                    else None,
+                    "reputation": target_user.get("reputation")
+                    if target_user
+                    else None,
+                },
+                "operator": {
+                    "uid": operator.get("id") if operator else None,
+                    "nickname": operator.get("nickname") if operator else None,
+                    "level": get_level(operator.get("reputation", 0))
+                    if operator
+                    else None,
+                    "reputation": operator.get("reputation") if operator else None,
+                    "role": operator.get("role") if operator else None,
+                },
+            }
+        )
 
     db.close()
     return Base.Answer(
         {"noticeList": notice_list},
         spent_time=timestamp() - t1,
     )
+
 
 @notification_methods.post("/g/s/notification/checked")
 @notification_methods.post("/x{ndcId}/s/notification/checked")
@@ -180,6 +193,7 @@ async def check_notifications(request: Request, ndcId: int = 0):
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
 
+
 @notification_methods.delete("/g/s/notification/{notificationId}")
 @notification_methods.delete("/x{ndcId}/s/notification/{notificationId}")
 async def delete_notification(request: Request, notificationId: str, ndcId: int = 0):
@@ -198,6 +212,7 @@ async def delete_notification(request: Request, notificationId: str, ndcId: int 
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
 
     return Base.Answer(spent_time=timestamp() - t1)
+
 
 @notification_methods.delete("/g/s/notification")
 @notification_methods.delete("/x{ndcId}/s/notification")

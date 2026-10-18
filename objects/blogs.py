@@ -7,8 +7,9 @@ from services.store import StoreService
 
 from datetime import datetime, timezone, timedelta
 
+
 def compute_poll_end_time(data: dict) -> str | None:
-    poll_timestamp = data.get("pollTimestamp") 
+    poll_timestamp = data.get("pollTimestamp")
     poll_duration = data.get("pollDuration")
     if not poll_timestamp or not poll_duration:
         return None
@@ -39,6 +40,7 @@ class Blog:
             "parentType": 0,
             "refObjectType": 0,
         }
+
     @staticmethod
     def QuizQuestion(data: dict, blog_id: str, can_see_answers: bool):
         opt_list = []
@@ -153,56 +155,61 @@ class Blog:
                 "quizInBestQuizzes": extensions.get("quizInBestQuizzes", False),
             }
 
-        return base | {
-            "author": User.GetUserInfo(
-                author_data, ndcId=ndcId, triggerUserId=trigger_uid
-            ),
-            "content": data.get("content"),
-            "type": data["blogType"],
-            "status": data.get("status", 0),
-            "votesCount": len(data.get("upvote", [])) - len(data.get("downvote", [])),
-            "commentsCount": commentsCount,
-            "ndcId": ndcId,
-            "createdTime": data["createdTime"],
-            "modifiedTime": data["modifiedTime"],
-            "extensions": {
-                "featuredType": data.get("featuredType", 0),
-                "privilegeOfCommentOnPost": data.get("commentAllowance", 1),
-                "pollSettings": {"polloptType": 0, "joinEnabled": False},
-                "props": data.get("props", []),
-            }
-            | extensions,
-            "mediaList": MediaList.List(data.get("mediaList", [])),
-            "votedValue": (
-                4
-                if trigger_uid in data.get("upvote", [])
-                else -1
-                if trigger_uid in data.get("downvote", [])
-                else 0
-            ),
-            "keywords": data.get("keywords"),
-            "viewCount": 0,
-            "timestamp": data.get("pollTimestamp"),
-            "durationInDays": data.get("pollDuration"),
-            "endTime": compute_poll_end_time(data),
-            "polloptList": [
-                Blog.PollOption(item, trigger_uid) for item in data["pollOptions"]
-            ]
-            if "pollOptions" in data
-            else None,
-            "tipInfo": data.get(
-                "tipInfo",
-                {
-                    "tipMaxCoin": 500,
-                    "tippersCount": 0,
-                    "tippable": True,
-                    "tipMinCoin": 1,
-                    "tipCustomOption": {
-                        "value": None,
-                        "icon": "https://media.altamino.top/monetization/bag_of_coins.png",
+        return (
+            base
+            | {
+                "author": User.GetUserInfo(
+                    author_data, ndcId=ndcId, triggerUserId=trigger_uid
+                ),
+                "content": data.get("content"),
+                "type": data["blogType"],
+                "status": data.get("status", 0),
+                "votesCount": len(data.get("upvote", []))
+                - len(data.get("downvote", [])),
+                "commentsCount": commentsCount,
+                "ndcId": ndcId,
+                "createdTime": data["createdTime"],
+                "modifiedTime": data["modifiedTime"],
+                "extensions": {
+                    "featuredType": data.get("featuredType", 0),
+                    "privilegeOfCommentOnPost": data.get("commentAllowance", 1),
+                    "pollSettings": {"polloptType": 0, "joinEnabled": False},
+                    "props": data.get("props", []),
+                }
+                | extensions,
+                "mediaList": MediaList.List(data.get("mediaList", [])),
+                "votedValue": (
+                    4
+                    if trigger_uid in data.get("upvote", [])
+                    else -1
+                    if trigger_uid in data.get("downvote", [])
+                    else 0
+                ),
+                "keywords": data.get("keywords"),
+                "viewCount": 0,
+                "timestamp": data.get("pollTimestamp"),
+                "durationInDays": data.get("pollDuration"),
+                "endTime": compute_poll_end_time(data),
+                "polloptList": [
+                    Blog.PollOption(item, trigger_uid) for item in data["pollOptions"]
+                ]
+                if "pollOptions" in data
+                else None,
+                "tipInfo": data.get(
+                    "tipInfo",
+                    {
+                        "tipMaxCoin": 500,
+                        "tippersCount": 0,
+                        "tippable": True,
+                        "tipMinCoin": 1,
+                        "tipCustomOption": {
+                            "value": None,
+                            "icon": "https://media.altamino.top/monetization/bag_of_coins.png",
+                        },
+                        "tippedCoins": 0,
+                        "tippersList": [],
                     },
-                    "tippedCoins": 0,
-                    "tippersList": [],
-                },
-            ),
-        } | quiz_extra
+                ),
+            }
+            | quiz_extra
+        )
