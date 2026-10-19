@@ -36,6 +36,7 @@ from objects import Base, Chat, Errors, Push, User
 from objects.types import ChatType, UserRole, ChatAlertOptions
 from objects.types.store import StoreItemType
 from services.store import StoreService
+from helpers.constraint_decorator import not_banned
 
 from datetime import UTC, datetime
 
@@ -453,6 +454,7 @@ async def chat_apply_bubble(
 
 @chats.post("/g/s/chat/thread/{chatId}")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}")
+@not_banned()
 async def edit_chat(chatId: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -520,6 +522,7 @@ async def edit_chat(chatId: str, request: Request, ndcId: int = 0):
 # [POST] /api/v1/g/s/chat/thread/.../member/.../background
 @chats.post("/g/s/chat/thread/{chatId}/member/{uid}/background")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/member/{uid}/background")
+@not_banned()
 async def edit_background_chat(chatId: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -590,6 +593,7 @@ async def edit_background_chat(chatId: str, request: Request, ndcId: int = 0):
 
 @chats.delete("/g/s/chat/thread/{chatId}")
 @chats.delete("/x{ndcId}/s/chat/thread/{chatId}")
+@not_banned()
 async def delete_chat(chatId: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -740,6 +744,7 @@ async def if_chat_exists(
 @chats.post("/x{ndcId}/s/chat/thread")
 @turtlelimiter(limit=1, period=TurtleTime.minute, tag="create-chat")
 @strike_check
+@not_banned()
 async def create_chat(request: Request, ndcId: int = 0):
     t1 = timestamp()
 
@@ -754,6 +759,14 @@ async def create_chat(request: Request, ndcId: int = 0):
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
     db = await Database().init()
+    if data.get("inviteeUids"):
+        blocked_by = await db.get(table="Users").find_one(
+            {"id": {"$in": data["inviteeUids"]}, "blockedUidList": trigger_uid}
+        )
+        trigger_row = await db.get(table="Users").find_one({"id": trigger_uid})
+        if blocked_by and not UserRole.is_global_staff(trigger_row.get("role", 0)):
+            db.close()
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
     table = db.get(f"x{ndcId}", "Chats")
 
     if data["type"] == ChatType.Private:
@@ -1013,6 +1026,7 @@ CALL_STATE_MESSAGE_TYPES = list(range(52, 61))
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/message")
 @turtlelimiter(limit=3, period=TurtleTime.second, tag="send-message")
 @strike_check
+@not_banned()
 async def send_message(request: Request, chatId: str, ndcId: int = 0):
     t1 = timestamp()
     trigger_uid = request.state.session.get("uid")
@@ -1382,6 +1396,7 @@ async def get_message(request: Request, chatId: str, messageId: str, ndcId: int 
 @chats.post("/g/s/chat/thread/{chatId}/message/{messageId}/{admin}")
 @chats.delete("/x{ndcId}/s/chat/thread/{chatId}/message/{messageId}")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/message/{messageId}/{admin}")
+@not_banned()
 async def delete_message(
     request: Request, chatId: str, messageId: str, ndcId: int = 0, admin: str = ""
 ):
@@ -1434,6 +1449,7 @@ async def delete_message(
 @chats.post("/g/s/chat/thread/{chatId}/message/{messageId}")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/message/{messageId}")
 @turtlelimiter(limit=5, period=TurtleTime.second, tag="edit-message")
+@not_banned()
 async def edit_message(request: Request, chatId: str, messageId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -1804,6 +1820,7 @@ async def get_chat_cohosts(
 
 @chats.post("/g/s/chat/thread/{chatId}/co-host")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/co-host")
+@not_banned()
 async def set_cohosts(request: Request, chatId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -1862,6 +1879,7 @@ async def set_cohosts(request: Request, chatId: str, ndcId: int = 0):
 
 @chats.delete("/g/s/chat/thread/{chatId}/co-host/{uid}")
 @chats.delete("/x{ndcId}/s/chat/thread/{chatId}/co-host/{uid}")
+@not_banned()
 async def del_cohosts(request: Request, chatId: str, uid: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -1913,6 +1931,7 @@ async def del_cohosts(request: Request, chatId: str, uid: str, ndcId: int = 0):
 # TODO: We will need to create a system for sending and receiving requests to assume the host role—though it is not yet clear exactly how.
 @chats.post("/g/s/chat/thread/{chatId}/transfer-organizer")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/transfer-organizer")
+@not_banned()
 async def transfer_host(request: Request, chatId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -1982,6 +2001,7 @@ async def transfer_host(request: Request, chatId: str, ndcId: int = 0):
 
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/tipping")
 @chats.post("/g/s/chat/thread/{chatId}/tipping")
+@not_banned()
 async def tip_chat(request: Request, chatId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -2262,6 +2282,7 @@ async def tipped_users_summary(
 @chats.post("/g/s/chat/thread/{chatId}/member/invite")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/member/invite")
 @strike_check
+@not_banned()
 async def invite_to_chat(request: Request, chatId: str, ndcId: int = 0):
     t1 = timestamp()
     data = await request.json()
@@ -2352,6 +2373,7 @@ async def invite_to_chat(request: Request, chatId: str, ndcId: int = 0):
 @chats.post("/g/s/chat/thread/{chatId}/member/{userId}")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/member/{userId}")
 @turtlelimiter(limit=1, period=TurtleTime.second, tag="jl-chat")
+@not_banned()
 async def join_chat(request: Request, chatId: str, userId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -2426,6 +2448,7 @@ async def join_chat(request: Request, chatId: str, userId: str, ndcId: int = 0):
 @chats.delete("/g/s/chat/thread/{chatId}/member/{userId}")
 @chats.delete("/x{ndcId}/s/chat/thread/{chatId}/member/{userId}")
 @turtlelimiter(limit=1, period=TurtleTime.second, tag="jl-chat")
+@not_banned()
 async def leave_chat(
     request: Request, chatId: str, userId: str, allowRejoin: int = 0, ndcId: int = 0
 ):
@@ -2562,6 +2585,7 @@ async def mark_as_read(request: Request, chatId: str, ndcId: int = 0):
 
 @chats.post("/g/s/chat/thread/{chatId}/{parameter}/{mode}")
 @chats.post("/x{ndcId}/s/chat/thread/{chatId}/{parameter}/{mode}")
+@not_banned()
 async def toggle_things(
     chatId: str, mode: str, parameter: str, request: Request, ndcId: int = 0
 ):

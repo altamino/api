@@ -27,7 +27,7 @@ from objects.types import UserRole, OnlineStatus
 from objects.types.store import StoreItemType
 from helpers.store import _iso
 from helpers.tipping_limiter import check_and_increment_tipping_limit
-
+from helpers.constraint_decorator import not_banned
 
 communities = APIRouter()
 communities.route_class = CachableRoute
@@ -270,6 +270,7 @@ async def search_community_by_amino_id(
 # community join
 @communities.post("/x{ndcId}/s/community/join")
 @turtlelimiter(limit=1, period=TurtleTime.second, tag="jl-community")
+@not_banned()
 async def join_community(request: Request, ndcId: int):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -381,6 +382,7 @@ async def join_community(request: Request, ndcId: int):
 # community leave
 @communities.post("/x{ndcId}/s/community/leave")
 @turtlelimiter(limit=1, period=TurtleTime.second, tag="jl-community")
+@not_banned()
 async def leave_community(request: Request, ndcId: int):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -692,6 +694,7 @@ async def get_user_groups(
 
 @communities.post("/g/s/user-group/{userGroupType}/position")
 @communities.post("/x{ndcId}/s/user-group/{userGroupType}/position")
+@not_banned()
 async def reorder_user_group(request: Request, userGroupType: str, ndcId: int = 0):
     t1 = timestamp()
     if userGroupType != UserGroupType.QuickAccess:
@@ -739,6 +742,7 @@ async def reorder_user_group(request: Request, userGroupType: str, ndcId: int = 
 
 @communities.post("/g/s/user-group/{userGroupType}/{targetId}")
 @communities.post("/x{ndcId}/s/user-group/{userGroupType}/{targetId}")
+@not_banned()
 async def add_to_user_group(
     request: Request, userGroupType: str, targetId: str, ndcId: int = 0
 ):
@@ -776,6 +780,7 @@ async def add_to_user_group(
 
 @communities.delete("/g/s/user-group/{userGroupType}/{targetId}")
 @communities.delete("/x{ndcId}/s/user-group/{userGroupType}/{targetId}")
+@not_banned()
 async def remove_from_user_group(
     request: Request, userGroupType: str, targetId: str, ndcId: int = 0
 ):
@@ -1082,6 +1087,7 @@ def _week_key(dt: datetime) -> str:
 
 
 @communities.post("/x{ndcId}/s/community/stats/user-active-time")
+@not_banned()
 async def count_user_active_time(request: Request, ndcId: int = 0):
     t1 = timestamp()
     if ndcId == 0:
@@ -1295,6 +1301,7 @@ async def _grant_ownership(
 
 @communities.post("/g/s/sticker-collection/creatable-check")
 @communities.post("/x{ndcId}/s/sticker-collection/creatable-check")
+@not_banned()
 async def sticker_creatable_check(
     request: Request,
     ndcId: int = 0,
@@ -1436,6 +1443,7 @@ async def sticker_collections(
 
 @communities.post("/g/s/sticker-collection")
 @communities.post("/x{ndcId}/s/sticker-collection")
+@not_banned()
 async def create_sticker_collection(
     request: Request,
     ndcId: int = 0,
@@ -1576,6 +1584,7 @@ async def create_sticker_collection(
 
 @communities.post("/g/s/sticker-collection/{collectionId}")
 @communities.post("/x{ndcId}/s/sticker-collection/{collectionId}")
+@not_banned()
 async def edit_sticker_collection(
     request: Request,
     collectionId: str,
@@ -1771,6 +1780,7 @@ async def edit_sticker_collection(
 
 @communities.delete("/g/s/sticker-collection/{collectionId}")
 @communities.delete("/x{ndcId}/s/sticker-collection/{collectionId}")
+@not_banned()
 async def delete_sticker_collection(
     request: Request,
     collectionId: str,
@@ -1833,6 +1843,7 @@ async def activate_sticker_collection(
 
 @communities.post("/g/s/sticker-collection/{collectionId}/deactivate")
 @communities.post("/x{ndcId}/s/sticker-collection/{collectionId}/deactivate")
+@not_banned()
 async def deactivate_sticker_collection(
     request: Request,
     collectionId: str,
@@ -1900,6 +1911,7 @@ async def _set_collection_activation(
 @communities.post("/x{ndcId}/s/tipping")
 @communities.post("/g/s/blog/tipping")
 @turtlelimiter(limit=5, period=TurtleTime.minute, tag="tip")
+@not_banned()
 async def tipping(request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:

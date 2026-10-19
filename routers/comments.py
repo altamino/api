@@ -10,6 +10,7 @@ from helpers.decorators.turtlelimit import TurtleTime, turtlelimiter
 from helpers.decorators.strikecheck import strike_check
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Comments, Errors, User, MediaList
+from helpers.constraint_decorator import not_banned, not_blocked
 
 comments_router = APIRouter()
 comments_router.route_class = CachableRoute
@@ -536,6 +537,7 @@ async def _post_comment(
 @comments_router.post("/x{ndcId}/s/item/{blogId}/comment/{cumId}")
 @turtlelimiter(limit=1, period=TurtleTime.second, tag="blog-comment")
 @strike_check
+@not_banned()
 async def post_blog_comment(
     blogId: str,
     request: Request,
@@ -582,6 +584,7 @@ async def post_blog_comment(
 @comments_router.delete("/g/s/item/{blogId}/comment/{commentId}")
 @comments_router.delete("/x{ndcId}/s/blog/{blogId}/comment/{commentId}")
 @comments_router.delete("/x{ndcId}/s/item/{blogId}/comment/{commentId}")
+@not_banned()
 async def delete_blog_comment(
     request: Request, blogId: str, commentId: str, ndcId: int = 0
 ):
@@ -612,6 +615,7 @@ async def delete_blog_comment(
 @comments_router.post("/g/s/item/{blogId}/comment/{commentId}/vote")
 @comments_router.post("/x{ndcId}/s/blog/{blogId}/comment/{commentId}/vote")
 @comments_router.post("/x{ndcId}/s/item/{blogId}/comment/{commentId}/vote")
+@not_banned()
 async def vote_blog_comment(
     request: Request, blogId: str, commentId: str, ndcId: int = 0
 ):
@@ -784,6 +788,8 @@ async def get_user_wall_comment_answers(
 @comments_router.post("/x{ndcId}/s/user-profile/{uid}/comment/{cumId}")
 @turtlelimiter(limit=1, period=TurtleTime.second, tag="profile-comment")
 @strike_check
+@not_banned()
+@not_blocked("uid")
 async def post_user_wall_comment(
     uid: str,
     request: Request,
@@ -853,6 +859,7 @@ async def delete_user_wall_comment(
 @comments_router.post("/g/s/user-profile/{uid}/g-comment/{commentId}/g-vote")
 @comments_router.post("/g/s/user-profile/{uid}/comment/{commentId}/vote")
 @comments_router.post("/x{ndcId}/s/user-profile/{uid}/comment/{commentId}/vote")
+@not_banned()
 async def vote_user_wall_comment(
     request: Request, uid: str, commentId: str, ndcId: int = 0
 ):
@@ -905,6 +912,7 @@ async def vote_user_wall_comment(
 @comments_router.delete("/g/s/user-profile/{uid}/comment/{commentId}/vote")
 @comments_router.delete("/g/s/user-profile/{uid}/g-comment/{commentId}/g-vote")
 @comments_router.delete("/x{ndcId}/s/user-profile/{uid}/comment/{commentId}/vote")
+@not_banned()
 async def remove_user_wall_comment_vote(
     request: Request, uid: str, commentId: str, ndcId: int = 0
 ):

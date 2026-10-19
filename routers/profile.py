@@ -45,6 +45,7 @@ from helpers.functions import calculate_page_tokens, parse_page_token
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Comments, Errors, User, MediaList
 from objects.types import UserRole
+from helpers.constraint_decorator import not_banned, not_blocked
 
 profile_methods = APIRouter()
 profile_methods.route_class = CachableRoute
@@ -688,6 +689,7 @@ async def get_user_followers(
 
 @profile_methods.post("/g/s/user-profile/{uid}/member")
 @profile_methods.post("/x{ndcId}/s/user-profile/{uid}/member")
+@not_blocked()
 async def follow_user(uid: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -858,6 +860,7 @@ async def _get_online_uids(ndcId: int) -> list[str]:
 
 @profile_methods.get("/g/s/user-profile/{uid}")
 @profile_methods.get("/x{ndcId}/s/user-profile/{uid}")
+@not_blocked()
 async def get_user_info(uid: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -923,6 +926,7 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
 @profile_methods.post("/x{ndcId}/s/user-profile/{uid}")
 @profile_methods.post("/g/s/account/{uid}")
 @profile_methods.post("/x{ndcId}/s/account/{uid}")
+@not_banned()
 async def edit_user_info(uid, request: Request, ndcId=0):
     t1 = timestamp()
     data = await request.json()

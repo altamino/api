@@ -20,6 +20,7 @@ from helpers.routers.cachable import CachableRoute
 from objects import Base, Blog, Errors, User, MediaList
 from objects.types import BlogType, UserRole
 from services.store import StoreService
+from helpers.constraint_decorator import not_banned
 
 blog_methods = APIRouter()
 blog_methods.route_class = CachableRoute
@@ -49,6 +50,7 @@ async def get_recommended_blogs(request: Request, ndcId: int):
 
 
 @blog_methods.post("/x{ndcId}/s/feed/featured/reorder")
+@not_banned()
 async def reorder_featured_blogs(request: Request, ndcId: int, body: dict):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -479,6 +481,7 @@ async def get_blog(
 @blog_methods.post("/g/s/blog/{blogId}")
 @blog_methods.post("/x{ndcId}/s/blog/{blogId}")
 @blog_methods.post("/x{ndcId}/s/item/{blogId}")
+@not_banned()
 async def edit_blog(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -563,6 +566,7 @@ async def edit_blog(request: Request, blogId: str, ndcId: int = 0):
 @blog_methods.delete("/x{ndcId}/s/blog/{blogId}")
 @blog_methods.delete("/x{ndcId}/s/item/{blogId}")
 @blog_methods.post("/x{ndcId}/s/item/{blogId}/batch-delete")
+@not_banned()
 async def delete_blog(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -597,6 +601,7 @@ async def delete_blog(request: Request, blogId: str, ndcId: int = 0):
 @blog_methods.post("/g/s/blog/{blogId}/g-vote")
 @blog_methods.post("/x{ndcId}/s/blog/{blogId}/vote")
 @blog_methods.post("/x{ndcId}/s/item/{blogId}/vote")
+@not_banned()
 async def vote_blog(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -643,6 +648,7 @@ async def vote_blog(request: Request, blogId: str, ndcId: int = 0):
 @blog_methods.delete("/g/s/item/{blogId}/vote")
 @blog_methods.delete("/x{ndcId}/s/blog/{blogId}/vote")
 @blog_methods.delete("/x{ndcId}/s/item/{blogId}/vote")
+@not_banned()
 async def remove_vote_from_blog(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -708,6 +714,7 @@ async def get_blog_voters(
 @blog_methods.post("/x{ndcId}/s/item")
 @turtlelimiter(limit=1, period=TurtleTime.second, tag="post-blog")
 @strike_check
+@not_banned()
 async def post_blog(request: Request, ndcId: int = 0):
     t1 = timestamp()
     trigger_uid = request.state.session["uid"]
@@ -850,6 +857,7 @@ async def post_blog(request: Request, ndcId: int = 0):
 @blog_methods.post("/x{ndcId}/s/blog/{blogId}/tipping")
 @blog_methods.post("/g/s/blog/{blogId}/tipping")
 @turtlelimiter(limit=5, period=TurtleTime.minute, tag="tip")
+@not_banned()
 async def tip_blog(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -1071,6 +1079,7 @@ async def get_blog_poll_voters(
 
 @blog_methods.post("/g/s/blog/{blogId}/quiz/result")
 @blog_methods.post("/x{ndcId}/s/blog/{blogId}/quiz/result")
+@not_banned()
 async def submit_quiz_result(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
@@ -1395,6 +1404,7 @@ async def vote_poll_option(
 
 @blog_methods.post("/g/s/blog/{blogId}/poll/option")
 @blog_methods.post("/x{ndcId}/s/blog/{blogId}/poll/option")
+@not_banned()
 async def add_poll_option(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
     if not request.state.session["validsession"]:
