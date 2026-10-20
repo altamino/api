@@ -275,10 +275,11 @@ async def admin_action(
     if table_name == "Users" and operation != 114:
         badgeColor = "default"
         _, victimModLevel = await check_rights(db, object_id)
-        if victimModLevel >= modLevel or modLevel < 2:
-            return Errors.NotEnoughRights(
-                spent_time=timestamp() - t1, lang=request.state.lang
-            )
+        if operation != 207:
+            if victimModLevel >= modLevel or modLevel < 2:
+                return Errors.NotEnoughRights(
+                    spent_time=timestamp() - t1, lang=request.state.lang
+                )
 
         if operation == 18:
             badgeColor = "danger"
@@ -400,7 +401,7 @@ async def send_notice(request: Request, ndcId: int = 0):
         db.close()
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
-    _, victimModLevel = await check_rights(db, uid)
+    _, victimModLevel = await check_rights(db, target_uid)
     if victimModLevel >= modLevel or modLevel < 2:
         return Errors.NotEnoughRights(
             spent_time=timestamp() - t1, lang=request.state.lang
