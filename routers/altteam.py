@@ -375,7 +375,7 @@ async def support_reset_password(request: Request, ndcId: int = 0):
             key=Config.PASSWORD_SALT,
             digest_size=64,
         ).hash
-        email = (data["email"] or "").strip()
+        email = (data["email"] or "").lower().strip()
     except Exception:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
     if not await EmailProcessor.Validate(email):
