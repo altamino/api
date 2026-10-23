@@ -26,17 +26,23 @@ def not_banned(check_global: bool = True):
                 if check_global or ndcId == 0:
                     row = await db.get(table="Users").find_one({"id": uid})
                     if row and row.get("status", 0) == 9:
-                        return Errors.UserBanned(timestamp() - t1, lang=request.state.lang)
+                        return Errors.UserBanned(
+                            timestamp() - t1, lang=request.state.lang
+                        )
 
                 if ndcId != 0:
                     row = await db.get(f"x{ndcId}", "Users").find_one({"id": uid})
                     if row and row.get("status", 0) == 9:
-                        return Errors.UserBanned(timestamp() - t1, lang=request.state.lang)
+                        return Errors.UserBanned(
+                            timestamp() - t1, lang=request.state.lang
+                        )
             finally:
                 db.close()
 
             return await func(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -59,11 +65,19 @@ def not_blocked(param: str = "userId"):
                 try:
                     row = await db.get(table="Users").find_one({"id": target_uid})
                     trigger_row = await db.get(table="Users").find_one({"id": uid})
-                    if row and uid in row.get("blockedUidList", []) and not UserRole.is_global_staff(trigger_row.get("role", 0)):
-                        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+                    if (
+                        row
+                        and uid in row.get("blockedUidList", [])
+                        and not UserRole.is_global_staff(trigger_row.get("role", 0))
+                    ):
+                        return Errors.NotEnoughRights(
+                            timestamp() - t1, lang=request.state.lang
+                        )
                 finally:
                     db.close()
 
             return await func(*args, **kwargs)
+
         return wrapper
+
     return decorator

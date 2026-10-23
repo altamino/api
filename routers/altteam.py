@@ -1,36 +1,30 @@
-from asyncio import to_thread as asyncio_thread
-import aiohttp
-from helpers.aquarium import Blake
-from helpers.config import Config
-from helpers.database.mongo import Database
-from helpers.processors.email import EmailProcessor
-
-
-from time import time as timestamp
 import hashlib
 import io
-import re
 import json
-import zipfile
-from fastapi import APIRouter, Request
-from helpers.config import Config
-from helpers.routers.cachable import CachableRoute
-from objects import Base, Errors
-from objects.types import UserRole, UserStatus
-from objects.types.store import StoreItemType
-
-from string import ascii_letters, digits
+import re
 import secrets
-
-from helpers.database.redis import get as get_redis
-from helpers.database.models import Global, ModelFabric
-from helpers.generator import Generator
-from objects import Links
-
 import uuid
+import zipfile
+from asyncio import to_thread as asyncio_thread
 from datetime import UTC, datetime
-from objects.types.store import DiscountStatus, RestrictType
+from string import ascii_letters, digits
+from time import time as timestamp
+
+import aiohttp
+from fastapi import APIRouter, Request
+
+from helpers.aquarium import Blake
+from helpers.config import Config
+from helpers.database.models import Global, ModelFabric
+from helpers.database.mongo import Database
+from helpers.database.redis import get as get_redis
+from helpers.generator import Generator
+from helpers.processors.email import EmailProcessor
 from helpers.processors.session import SessionProcessor
+from helpers.routers.cachable import CachableRoute
+from objects import Base, Errors, Links
+from objects.types import UserRole, UserStatus
+from objects.types.store import DiscountStatus, RestrictType, StoreItemType
 
 
 def _iso() -> str:
@@ -381,14 +375,19 @@ async def support_reset_password(request: Request, ndcId: int = 0):
             key=Config.PASSWORD_SALT,
             digest_size=64,
         ).hash
-        email = data["email"]
+        email = (data["email"] or "").strip()
     except Exception:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
     if not await EmailProcessor.Validate(email):
         return Errors.InvalidEmail(timestamp() - t1, lang=request.state.lang)
     table = db.get(table="Users")
-    await table.update_one({"email": email}, {"$set": {"passwordHash": updateSecret}})
+    _result = await table.update_one(
+        {"email": email}, {"$set": {"passwordHash": updateSecret}}
+    )
     db.close()
+
+    if _result.matched_count <= 0:
+        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
 
     html = """<h3>Your AltAmino password has been reset by support.</h3><p>Your new password is:</p><h2>{{ PASSWORD }}</h2><p>Please log in using this password and change it as soon as possible in your account settings.</p><p>If you did not request this, please contact us immediately.</p><br><p>Thanks,<br>Team AltAmino</p>"""
     text = "Your AltAmino password has been reset by support. Your new temporary password is: {{ PASSWORD }}. Please log in and change it as soon as possible in your account settings. If you did not request this, please contact us immediately."
