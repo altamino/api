@@ -9,6 +9,15 @@ from services.store import StoreService
 from .user import User
 
 
+def _api_time(value):
+    """Mongo dates (naive UTC or aware) -> the API's createdTime format; strings pass through."""
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC)
+        return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return value
+
+
 class Chat:
     BoilerplateMessage = {
         "messageId": "00000000-0000-0000-0000-000000000",
@@ -160,6 +169,9 @@ class Chat:
             "type": data["messageType"],
             "mediaValue": data.get("mediaValue"),
         }
+
+        if data.get("isEdited") and data.get("editedTime"):
+            result["editedTime"] = _api_time(data["editedTime"])
 
         if chatBubbleId:
             result["chatBubbleId"] = chatBubbleId
