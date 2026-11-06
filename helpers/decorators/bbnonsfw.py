@@ -3,7 +3,9 @@ from base64 import b64decode, b64encode
 from functools import wraps
 from io import BytesIO
 from typing import Literal
-from httpx import AsyncClient
+import logging
+import math
+from httpx import AsyncClient, HTTPStatusError, TransportError, Timeout
 from PIL import Image
 from helpers.config import Config
 from objects.errors import Errors
@@ -59,52 +61,68 @@ def shrink_image_data_if_needed(
     return b64encode(image_bytes).decode()
 
 
-async def bbnonsfw_manual_check(image: str | bytes) -> bool:
-    """
-    False if image is OK, True if NSFW.
-    """
+class ModerationUnavailable(Exception):
+    """A valid media moderation verdict could not be obtained."""
 
+
+def _validated_nsfw_score(answer):
+    if not isinstance(answer, list):
+        raise ValueError("Invalid moderation response")
+    for entry in answer:
+        if isinstance(entry, dict) and entry.get("label") == "nsfw":
+            score = entry.get("score")
+            if (
+                type(score) not in (int, float)
+                or not math.isfinite(score)
+                or not 0 <= score <= 1
+            ):
+                raise ValueError("Invalid moderation score")
+            return float(score)
+    raise ValueError("Missing moderation verdict")
+
+
+async def bbnonsfw_manual_check(image: str | bytes) -> bool:
+    """Return a verdict only after a valid scanner response, with bounded retry."""
     if not Config.ENABLE_BBNONSFW:
         return False
-
     if isinstance(image, bytes):
         first_bytes = image[:128]
     elif isinstance(image, str):
         first_bytes = b64decode(image)[:128]
     else:
-        raise Exception("Empty data")
-
-    file_ext = detect_file_ext(first_bytes)
-    if file_ext is None:
+        raise ValueError("Empty image data")
+    if detect_file_ext(first_bytes) is None:
         return False
-
     image = await asyncio.to_thread(shrink_image_data_if_needed, image, 650)
-    async with AsyncClient() as client:
-        response = await client.post(
-            Config.BBNONSFW_API_URL,
-            json={"i": image},
-            headers={
-                "Authorization": f"Bearer {Config.BBNONSFW_API_KEY}",
-            },
-        )
-        response.raise_for_status()
-
-    answer = response.json()
-    if not isinstance(answer, list):
-        print(f"Unexpected API response format: {answer}")
-        return False
-
-    nsfw_score = next(
-        (
-            x["score"]
-            for x in answer
-            if isinstance(x, dict) and x.get("label") == "nsfw"
-        ),
-        0.0,
-    )
-
-    print(f"NSFW Score: {nsfw_score}")
-    return nsfw_score > 0.87  # IS THAT THE BITE OF 87?! O_O
+    if isinstance(image, bytes):
+        image = b64encode(image).decode()
+    timeout = Timeout(15.0, connect=3.0, write=10.0, pool=3.0)
+    reason = "unavailable"
+    async with AsyncClient(timeout=timeout) as client:
+        for attempt in range(2):
+            try:
+                response = await client.post(
+                    Config.BBNONSFW_API_URL,
+                    json={"i": image},
+                    headers={"Authorization": f"Bearer {Config.BBNONSFW_API_KEY}"},
+                )
+                response.raise_for_status()
+                score = _validated_nsfw_score(response.json())
+                return score > 0.87
+            except TransportError as error:
+                reason = type(error).__name__
+            except HTTPStatusError as error:
+                status = error.response.status_code
+                reason = "upstream_http_" + str(status)
+                if status not in (408, 425, 429, 500, 502, 503, 504):
+                    break
+            except ValueError:
+                reason = "invalid_response"
+            if attempt == 0:
+                await asyncio.sleep(0.2)
+    # Never include the image, request, endpoint, credentials or response body in logs.
+    logging.getLogger("altamino").warning("Image analysis unavailable (%s)", reason)
+    raise ModerationUnavailable(reason)  # IS THAT THE BITE OF 87?! O_O
 
 
 def bbnonsfw(

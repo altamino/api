@@ -362,55 +362,76 @@ async def support_reset_password(request: Request, ndcId: int = 0):
         return Errors.PathUnderMaintenance(timestamp() - t1, lang=request.state.lang)
     trigger_uid = request.state.session.get("uid")
     db = await Database().init()
-    sensitive_table = db.get(table="Users")
-    user = await sensitive_table.find_one({"id": trigger_uid})
-    if not user or not UserRole.is_global_staff(user.get("role", 0)):
-        db.close()
-        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
     try:
+        sensitive_table = db.get(table="Users")
+        user = await sensitive_table.find_one({"id": trigger_uid})
+        if not user or not UserRole.is_global_staff(user.get("role", 0)):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+
+        try:
+            data = await request.json()
+            email = (data.get("email") or data.get("identity") or "").lower().strip()
+        except Exception:
+            return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+        if not email or not await EmailProcessor.Validate(email):
+            return Errors.InvalidEmail(timestamp() - t1, lang=request.state.lang)
+
+        table = db.get(table="Users")
+        target_user = await table.find_one(
+            {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}
+        )
+        if not target_user:
+            return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
         secret = "".join(secrets.choice(ascii_letters + digits) for _ in range(12))
-        data = await request.json()
         updateSecret = Blake(
             data=f"0 {secret}",
             key=Config.PASSWORD_SALT,
             digest_size=64,
         ).hash
-        email = (data["email"] or "").lower().strip()
-    except Exception:
-        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
-    if not await EmailProcessor.Validate(email):
-        return Errors.InvalidEmail(timestamp() - t1, lang=request.state.lang)
-    table = db.get(table="Users")
-    _result = await table.update_one(
-        {"email": email}, {"$set": {"passwordHash": updateSecret}}
-    )
-    db.close()
 
-    if _result.matched_count <= 0:
-        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+        html = """<h3>Your AltAmino password has been reset by support.</h3><p>Your new password is:</p><h2>{{ PASSWORD }}</h2><p>Please log in using this password and change it as soon as possible in your account settings.</p><p>If you did not request this, please contact us immediately.</p><br><p>Thanks,<br>Team AltAmino</p>"""
+        text = "Your AltAmino password has been reset by support. Your new temporary password is: {{ PASSWORD }}. Please log in and change it as soon as possible in your account settings. If you did not request this, please contact us immediately."
 
-    html = """<h3>Your AltAmino password has been reset by support.</h3><p>Your new password is:</p><h2>{{ PASSWORD }}</h2><p>Please log in using this password and change it as soon as possible in your account settings.</p><p>If you did not request this, please contact us immediately.</p><br><p>Thanks,<br>Team AltAmino</p>"""
-    text = "Your AltAmino password has been reset by support. Your new temporary password is: {{ PASSWORD }}. Please log in and change it as soon as possible in your account settings. If you did not request this, please contact us immediately."
+        html = html.replace("{{ PASSWORD }}", secret)
+        text = text.replace("{{ PASSWORD }}", secret)
+        subject = "Your AltAmino password has been reset"
 
-    html = html.replace("{{ PASSWORD }}", secret)
-    text = text.replace("{{ PASSWORD }}", secret)
-    subject = "Your AltAmino password has been reset"
+        receiver_email = target_user.get("email", email)
 
-    try:
-        await asyncio_thread(
-            EmailProcessor.SendEmail,
-            receiver=email,
-            subject=subject,
-            html=html,
-            text=text,
+        try:
+            await asyncio_thread(
+                EmailProcessor.SendEmail,
+                receiver=receiver_email,
+                subject=subject,
+                html=html,
+                text=text,
+            )
+        except Exception as e:
+            print(e)
+            return Errors.MailError(timestamp() - t1, lang=request.state.lang)
+
+        _result = await table.update_one(
+            {"id": target_user["id"]}, {"$set": {"passwordHash": updateSecret}}
         )
-    except Exception as e:
-        print(e)
-        return Errors.MailError(timestamp() - t1, lang=request.state.lang)
-    return Base.Answer(
-        {},
-        spent_time=timestamp() - t1,
-    )
+        if _result.matched_count <= 0:
+            return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+
+        # Verify password was updated successfully in DB
+        updated_user = await table.find_one({"id": target_user["id"]})
+        if not updated_user or updated_user.get("passwordHash") != updateSecret:
+            return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+
+        # End all active sessions for the user so they must log in with the new password
+        await SessionProcessor.EndAllByUser(target_user["id"])
+
+        return Base.Answer(
+            {},
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()
 
 
 @altteam.post("/g/s/altteam/user-profile/{userId}/status")

@@ -125,7 +125,7 @@ async def supported_languages_config(request: Request):
     return Base.Answer({"supportedLanguages": Config.LANG_SEGMENTS})
 
 
-@configurations.get("/g/s/membership")
+# GET /g/s/membership: routers/amino_plus.py
 async def membership_config(request: Request):
     return Base.Answer(
         {

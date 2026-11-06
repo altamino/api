@@ -30,6 +30,38 @@ MOD_LEVELS = {
     254: 3,
 }
 
+# Minimum moderator level per user-profile operation. As in Amino, curators (level 1) may
+# hide/unhide regular members; anything else on profiles stays with leaders (level 2+).
+USER_OP_MIN_LEVEL = {18: 1, 19: 1}
+# Warnings and strikes (/notice) are curator tools too; bans stay with leaders.
+NOTICE_MIN_LEVEL = 1
+
+
+async def _log_operation(
+    history,
+    operation,
+    badge,
+    reason,
+    mod_level,
+    object_id,
+    object_type,
+    author_id,
+    **extra,
+):
+    await history.insert_one(
+        ModelFabric.Construct(
+            MH_Item,
+            operation=operation,
+            badgeColor=badge,
+            reason=reason,
+            modLevel=mod_level,
+            objectId=object_id,
+            objectType=object_type,
+            authorId=author_id,
+            **extra,
+        )
+    )
+
 
 async def check_rights(
     db, uid: str, ndcId: int = 0, no_curators: bool = False, only_gods: bool = False
@@ -200,8 +232,9 @@ async def ban_user_toggle(request: Request, uid: str, ndcId: int = 0):
     is_unban = "unban" in request.url.path
     status = 0 if is_unban else 9
 
-    can_do2, victimModLevel = await check_rights(db, uid)
+    can_do2, victimModLevel = await check_rights(db, uid, ndcId)
     if victimModLevel >= hammerModLevel or hammerModLevel < 2:
+        db.close()
         return Errors.NotEnoughRights(
             spent_time=timestamp() - t1, lang=request.state.lang
         )
@@ -259,10 +292,10 @@ async def admin_action(
         "chat/thread": ("Chats", 12),
         "user-profile": ("Users", 0),
     }
-    table_name, oT = table_map.get(object_type)
+    table_name, oT = table_map.get(object_type, (None, None))
     if not table_name:
         db.close()
-        return Errors.InvalidRequest()
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
     operation = data["adminOpName"]
     value = data.get("adminOpValue")
@@ -272,11 +305,15 @@ async def admin_action(
 
     print(f"Admin action: {object_type} ({table_name}) - {operation} - {value}")
 
-    if table_name == "Users" and operation != 114:
+    if table_name == "Users" and operation not in (114, 116):
         badgeColor = "default"
-        _, victimModLevel = await check_rights(db, object_id)
+        # The target's rank is the one held in this community, not in the global scope.
+        _, victimModLevel = await check_rights(db, object_id, ndcId)
         if operation != 207:
-            if victimModLevel >= modLevel or modLevel < 2:
+            if victimModLevel >= modLevel or modLevel < USER_OP_MIN_LEVEL.get(
+                operation, 2
+            ):
+                db.close()
                 return Errors.NotEnoughRights(
                     spent_time=timestamp() - t1, lang=request.state.lang
                 )
@@ -295,7 +332,8 @@ async def admin_action(
             )
         elif operation == 207:
             if ndcId == 0:
-                return Errors.InvalidRequest()
+                db.close()
+                return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
             titles = value.get("titles", []) if isinstance(value, dict) else []
             await table.update_one({"id": object_id}, {"$set": {"titles": titles}})
         else:
@@ -365,6 +403,51 @@ async def admin_action(
                     authorId=request.state.session["uid"],
                 )
             )
+        elif operation == 116:  # remove from featured (posts, wikis, chats, members)
+            await table.update_one(
+                {"id": object_id},
+                {"$set": {"featuredType": 0}, "$unset": {"featuredDuration": ""}},
+            )
+            await _log_operation(
+                history,
+                operation,
+                "default",
+                reason,
+                modLevel,
+                object_id,
+                oT,
+                request.state.session["uid"],
+            )
+        elif operation == 103 and table_name == "Blogs":  # change post category
+            if not isinstance(value, str) or not value:
+                db.close()
+                return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+            await table.update_one({"id": object_id}, {"$set": {"categoryId": value}})
+            await _log_operation(
+                history,
+                operation,
+                "default",
+                reason,
+                modLevel,
+                object_id,
+                oT,
+                request.state.session["uid"],
+            )
+        elif operation in (240, 241) and table_name == "Blogs":  # best quizzes on/off
+            await table.update_one(
+                {"id": object_id},
+                {"$set": {"extensions.quizInBestQuizzes": operation == 240}},
+            )
+            await _log_operation(
+                history,
+                operation,
+                "success" if operation == 240 else "default",
+                reason,
+                modLevel,
+                object_id,
+                oT,
+                request.state.session["uid"],
+            )
         else:
             db.close()
             return Errors.UnimplementedPath()
@@ -401,8 +484,9 @@ async def send_notice(request: Request, ndcId: int = 0):
         db.close()
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
-    _, victimModLevel = await check_rights(db, target_uid)
-    if victimModLevel >= modLevel or modLevel < 2:
+    _, victimModLevel = await check_rights(db, target_uid, ndcId)
+    if victimModLevel >= modLevel or modLevel < NOTICE_MIN_LEVEL:
+        db.close()
         return Errors.NotEnoughRights(
             spent_time=timestamp() - t1, lang=request.state.lang
         )

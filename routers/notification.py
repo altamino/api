@@ -1,9 +1,10 @@
+from helpers.notification_contract import notification_dto
 from time import time as timestamp
 from pymongo import DESCENDING
 from fastapi import APIRouter, Request
 
 from helpers.database.mongo import Database
-from helpers.functions import parse_page_token
+from helpers.functions import parse_page_token, calculate_page_tokens
 from helpers.routers.cachable import CachableRoute
 from objects import Base, Errors, User
 from objects.user import get_level
@@ -48,7 +49,10 @@ async def get_notifications(
     notification_list = []
     for doc in docs:
         author_uid = doc.get("authorUid")
-        author_row = await author_table.find_one({"id": author_uid})
+        scoped_row = await author_table.find_one({"id": author_uid})
+        global_row = await g_table.find_one({"id": author_uid})
+        # A departed community member still has a real global identity.
+        author_row = dict(global_row or {}) | dict(scoped_row or {})
 
         author_profile = None
         if author_row:
@@ -70,33 +74,18 @@ async def get_notifications(
             author_profile = User.GetUserInfo(
                 author_row,
                 triggerUserId=trigger_uid,
-                extensions=author_row.get("extensions"),
+                extensions=author_row.get("extensions") or {},
                 ndcId=ndcId,
             )
 
-        notification_list.append(
-            {
-                "notificationId": doc.get("id"),
-                "ndcId": ndcId,
-                "type": doc.get("type"),
-                "parentType": doc.get("parentType"),
-                "parentId": doc.get("parentId"),
-                "parentText": doc.get("parentText"),
-                "objectId": doc.get("objectId"),
-                "objectType": doc.get("objectType"),
-                "objectSubtype": doc.get("objectSubtype"),
-                "objectText": doc.get("objectText"),
-                "contextText": doc.get("contextText"),
-                "contextValue": doc.get("contextValue"),
-                "contextNdcId": doc.get("contextNdcId"),
-                "createdTime": doc.get("createdTime"),
-                "author": author_profile,
-            }
-        )
+        notification_list.append(notification_dto(doc, ndcId, author_profile))
 
     db.close()
     return Base.Answer(
-        {"notificationList": notification_list},
+        {
+            "notificationList": notification_list,
+            "paging": calculate_page_tokens(start, size, docs),
+        },
         spent_time=timestamp() - t1,
     )
 

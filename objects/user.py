@@ -299,7 +299,7 @@ class User:
             iconFrame = {}
         icon = (
             None
-            if extensions.get("hideUserProfile", False) or row.get("icon") == ""
+            if (extensions or {}).get("hideUserProfile", False) or row.get("icon") == ""
             else row.get("icon")
         )
         return {
@@ -314,6 +314,7 @@ class User:
             "nickname": row["nickname"],
             "tagList": row.get("tagList", []),
             "fanClubList": [],
+            "influencerInfo": row.get("influencerInfo"),
             "mediaList": MediaList.List(row.get("mediaList", [])),
             "icon": icon,
             "accountMembershipStatus": int(row.get("isPaidSubscriber", 0)),
@@ -367,7 +368,7 @@ class User:
             "verified": bool(len(row.get("tagList", []))),  # this fixes tagList! :D
             "notificationSubscriptionStatus": 0,
             "pushEnabled": True,
-            "membershipStatus": membershipStatus,
+            "membershipStatus": followingStatus,
             "commentsCount": row.get("commentsCount", 0),
             "itemsCount": len(row.get("purchasedItems", {}).get("frames", []))
             + len(row.get("purchasedItems", {}).get("bubbles", [])),

@@ -57,7 +57,7 @@ async def create_notification(
                 "objectText": objectText,
                 "contextText": contextText,
                 "contextValue": contextValue,
-                "contextNdcId": contextNdcId,
+                "contextNdcId": ndcId if contextNdcId is None else contextNdcId,
                 "createdTime": created_time,
                 "read": False,
             }

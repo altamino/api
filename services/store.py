@@ -36,6 +36,19 @@ def _id_field(object_type: int) -> str | None:
     return StoreItemType.TYPE_INFO.get(object_type, (None, None))[1]
 
 
+def _catalog_query(group_id: str) -> dict:
+    if group_id != "sticker":
+        return {}
+    # Native types: 1 = normal store pack, 2 = personal, 3 = user/community-created.
+    return {
+        "collectionType": 1,
+        "status": 0,
+        "ndcId": {"$in": [0, None]},
+        "isShared": {"$ne": True},
+        "collectionId": {"$nin": ["mood"], "$not": {"$regex": "^personal-"}},
+    }
+
+
 class StoreService:
     def __init__(self, db: Database, uid: str, ndcId: int = 0):
         self.db = db
@@ -112,6 +125,9 @@ class StoreService:
         if not meta:
             return []
         col = self._collection(meta["collection"])
+        catalog = _catalog_query(group_id)
+        if catalog:
+            query = {"$and": [catalog, query]}
         cursor = col.find(query, {"_id": 0})
         if skip:
             cursor = cursor.skip(skip)
@@ -161,7 +177,11 @@ class StoreService:
             if not meta:
                 continue
             docs = await self._fetch_with_ownership(group_id, {}, limit=6)
-            total = await self._collection(meta["collection"]).count_documents({})
+            total = await self._collection(meta["collection"]).count_documents(
+                _catalog_query(group_id)
+            )
+            if group_id == "sticker" and total == 0:
+                continue  # APK inserts a local emoji card into any returned sticker section.
             section_list.append(
                 {
                     "name": meta["name"],
@@ -426,6 +446,14 @@ class StoreService:
             )
             return PurchaseResult(store_item=store_item)
 
+        if object_type == StoreItemType.StickerCollection:
+            catalog_item = await self._collection("StickerCollections").find_one(
+                {"$and": [_catalog_query("sticker"), {"collectionId": object_id}]},
+                {"_id": 1},
+            )
+            if catalog_item is None:
+                return PurchaseResult(error_code="invalid")
+
         restrict_type = item.get("restrictType")
         price = item.get("price", 0)
         if restrict_type is None:
@@ -453,6 +481,17 @@ class StoreService:
                     error_code=PurchaseError.NOT_ENOUGH_COINS,
                     error_message="Not enough coins",
                 )
+            from helpers import coin_ledger
+
+            await coin_ledger.record(
+                self.db,
+                self.uid,
+                -price,
+                "store_purchase",
+                getattr(self, "ndcId", 0),
+                objectId=object_id,
+                title=item.get("name") or item.get("title"),
+            )
 
         duration = item.get("availableDuration", 0)
         expired = None

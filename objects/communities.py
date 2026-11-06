@@ -559,6 +559,10 @@ class Communities:
             "promotionalMediaList": [MediaList.Item(data["coverUrl"])]
             if "coverUrl" in data
             else None,
+            # iOS community cards read their cover from launchPage.mediaList[0].
+            "launchPage": {"mediaList": [MediaList.Item(data["coverUrl"])]}
+            if "coverUrl" in data
+            else None,
         }
 
     """

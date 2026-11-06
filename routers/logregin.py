@@ -1,3 +1,4 @@
+import re
 from asyncio import to_thread as asyncio_thread
 from base64 import b64decode, b64encode
 from json import dumps
@@ -328,18 +329,18 @@ async def register(request: Request):
     t1 = timestamp()
 
     try:
-        reciever = data.get("identity") or data.get("email")
+        email = data.get("email") or data.get("identity")
         if (
             (not DeviceProcessor.Validate(data["deviceID"]))
             or (data["deviceID"] != request.headers["NDCDEVICEID"])
-            or (not await EmailProcessor.Validate(reciever))
+            or (not await EmailProcessor.Validate(email))
             or (data["secret"][:2] != "0 " or data["nickname"].strip() in [None, ""])
         ):
             raise Exception()
 
         if data.get("validationContext"):
             if (
-                reciever != data["validationContext"]["identity"]
+                email != data["validationContext"]["identity"]
                 or data["validationContext"]["type"] != 1
             ):
                 raise Exception()
@@ -351,9 +352,7 @@ async def register(request: Request):
 
     if Config.ENABLE_EMAIL:
         codes = db.get(table="VerificationCodes")
-        codes_row = await codes.find_one(
-            {"deviceId": data["deviceID"], "email": reciever}
-        )
+        codes_row = await codes.find_one({"deviceId": data["deviceID"], "email": email})
         if codes_row is None:
             print("No codes")
             return Errors.UnverifiedEmail(timestamp() - t1, lang=request.state.lang)
@@ -373,7 +372,7 @@ async def register(request: Request):
             return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
     users = db.get(table="Users")
-    row = await users.find_one({"email": data["email"]})
+    row = await users.find_one({"email": email})
     if row is not None:
         db.close()
         return Errors.EmailWasTaken(timestamp() - t1, lang=request.state.lang)
@@ -390,7 +389,7 @@ async def register(request: Request):
             Global.Users,
             id=uid,
             nickname=data["nickname"],
-            email=data["email"],
+            email=email,
             passwordHash=passwordHash,
             aminoId=Generator.RandomAminoID(),
         )
@@ -401,7 +400,7 @@ async def register(request: Request):
         ModelFabric.Construct(Community.Users, id=uid, nickname=data["nickname"])
     )
     row2 = await table.find_one({"id": uid})
-    await codes.delete_one({"deviceId": data["deviceID"], "email": reciever})
+    await codes.delete_one({"deviceId": data["deviceID"], "email": email})
     db.close()
 
     return Base.Answer(
@@ -430,13 +429,14 @@ async def register_check(request: Request):
         ):
             raise Exception()
 
-        if "email" in data:
-            if not await EmailProcessor.Validate(data["email"]):
+        email = data.get("email") or data.get("identity")
+        if email:
+            if not await EmailProcessor.Validate(email):
                 raise Exception("Invalid email")
 
             db = await Database().init()
             gl_users = db.get(table="Users")
-            row = await gl_users.find_one({"email": data["email"]})
+            row = await gl_users.find_one({"email": email})
             if row is not None:
                 return Errors.EmailWasTaken(timestamp() - t1, lang=request.state.lang)
         elif "secret" in data:
@@ -471,7 +471,10 @@ async def login(request: Request):
         db = await Database().init()
         table = db.get(table="Users")
         row = await table.find_one(
-            {"passwordHash": passwordHash, "email": data["email"]}
+            {
+                "passwordHash": passwordHash,
+                "email": {"$regex": f"^{re.escape(data['email'])}$", "$options": "i"},
+            }
         )
 
         if row is None:

@@ -1,0 +1,35 @@
+{
+  "status": "deployed",
+  "tag": "3136900233bd",
+  "stage": "/root/other/altamino/.codex-follow-ws-20261029-3136900233bd",
+  "images": {
+    "api": "altamino-api:follow-ws-20261029-3136900233bd",
+    "websocket": "altamino-websocket:follow-ws-20261029-3136900233bd"
+  },
+  "files": [
+    "api/helpers/follow_state.py",
+    "api/helpers/live_activity.py",
+    "api/helpers/notification.py",
+    "api/helpers/notification_contract.py",
+    "api/helpers/routers/cachable.py",
+    "api/objects/user.py",
+    "api/routers/communities.py",
+    "api/routers/profile.py",
+    "websocket/handlers/__init__.py",
+    "websocket/handlers/call.py",
+    "websocket/handlers/chat.py",
+    "websocket/helpers/bounded_send.py",
+    "websocket/helpers/channel_store.py",
+    "websocket/helpers/connection_manager.py",
+    "websocket/helpers/durable_delivery.py",
+    "websocket/helpers/native_access.py",
+    "websocket/helpers/native_activities.py",
+    "websocket/helpers/native_protocol.py",
+    "websocket/main.py",
+    "websocket/objects/ws_events.py"
+  ],
+  "api_health": 200,
+  "websocket_health": 200,
+  "suites_run": false,
+  "device_tests_run": false
+}

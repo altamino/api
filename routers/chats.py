@@ -1,3 +1,4 @@
+from helpers.chat_preferences import parse_thread_ids, recent_rows, set_pin
 import asyncio
 from base64 import b64decode
 from random import choice
@@ -16,6 +17,7 @@ from helpers.adminWS import ApiBroadcastType
 from helpers.config import Config
 from helpers.database.models import Community, ModelFabric
 from helpers.database.mongo import Database
+from helpers import coin_ledger
 from helpers.tipping_limiter import check_and_increment_tipping_limit
 from helpers.decorators.bbnonsfw import bbnonsfw_manual_check
 from helpers.decorators.turtlelimit import TurtleTime, turtlelimiter
@@ -370,7 +372,7 @@ async def vvchat_permission(request: Request, chatId: str, ndcId: int = 0):
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
     if Config.AGORA_ADMIN_ONLY_MODE:
         user_table = db.get(table="Users")
-        user = await table.find_one({"id": trigger_uid})
+        user = await user_table.find_one({"id": trigger_uid})
         if user is None:
             return Errors.NotEnoughRights(
                 spent_time=timestamp() - t1, lang=request.state.lang
@@ -495,6 +497,13 @@ async def edit_chat(chatId: str, request: Request, ndcId: int = 0):
                 "announcement": ext.get("announcement"),
             }
         )
+        if "fansOnly" in ext:
+            from helpers.fan_access import club_enabled
+
+            update_chat["fansOnly"] = bool(
+                ext["fansOnly"] is True
+                and await club_enabled(db, ndcId, chat_info["hostId"])
+            )
 
         print(update_chat)
 
@@ -660,41 +669,42 @@ async def if_chat_exists(
             return r
         else:
             return Errors.MythicData(timestamp() - t1, lang=request.state.lang)
-    elif type == "exist-multi":
-        return Base.Answer(
-            {"threadList": [], "playlistInThreadList": {}}, spent_time=timestamp() - t1
-        )
-    elif type == "joined-me":
+    elif type in ("exist-multi", "joined-me", "recent", "recent-chats"):
         size = size if 0 < size < 101 else 25
-
+        if start < 0 or start > 10000:
+            return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+        try:
+            ids = parse_thread_ids(q) if type == "exist-multi" else None
+            stop_ms = None
+            if stoptime:
+                cutoff = datetime.fromisoformat(stoptime.replace("Z", "+00:00"))
+                stop_ms = int(
+                    cutoff.replace(tzinfo=cutoff.tzinfo or UTC).timestamp() * 1000
+                )
+        except (ValueError, TypeError):
+            return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
         db = await Database().init()
-        table = db.get(f"x{ndcId}", "Chats")
-        query = {"$or": [{"memberList": uid}, {"invitedList": uid}]}
-        if stoptime:
-            dt = datetime.strptime(stoptime, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-            stop_ms = int(dt.timestamp() * 1000)
-            query["lastMessageTimestamp"] = {"$lt": stop_ms}
-
-        cursor = (
-            table.find(query)
-            .sort("lastMessageTimestamp", DESCENDING)
-            .skip(start)
-            .limit(size)
-        )
-        items = [
-            await Chat.Info(item, db, trigger_uid=uid, ndcId=ndcId)
-            async for item in cursor
-        ]
-
-        info = Base.Answer(
-            {
-                "threadList": items,
-            },
-            spent_time=timestamp() - t1,
-        )
-
-        db.close()
-        return info
+        try:
+            rows = await recent_rows(
+                db,
+                uid,
+                ndcId,
+                ids,
+                size,
+                start,
+                stop_ms,
+                all_scopes=type != "joined-me",
+            )
+            items = [
+                await Chat.Info(row, db, trigger_uid=uid, ndcId=scope)
+                for scope, row, _ in rows
+            ]
+            return Base.Answer(
+                {"threadList": items, "playlistInThreadList": {}},
+                spent_time=timestamp() - t1,
+            )
+        finally:
+            db.close()
     elif type == "public-all":
         size = size if 0 < size < 101 else 25
 
@@ -713,6 +723,28 @@ async def if_chat_exists(
             {"threadList": items},
             spent_time=timestamp() - t1,
         )
+    elif type == "public-disabled":
+        # Public chats hidden by moderators (status 9): staff-only list of the Advanced menu.
+        size = size if 0 < size < 101 else 25
+
+        db = await Database().init()
+        try:
+            from routers.moderation_tools import check_rights
+
+            allowed, _ = await check_rights(db, uid, ndcId)
+            if not allowed:
+                return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+            table = db.get(f"x{ndcId}", "Chats")
+            items = [
+                await Chat.Info(item, db, trigger_uid=uid, ndcId=ndcId)
+                async for item in table.find({"chatType": 2, "status": 9})
+                .skip(start)
+                .limit(size)
+                .sort("lastMessageTimestamp", DESCENDING)
+            ]
+            return Base.Answer({"threadList": items}, spent_time=timestamp() - t1)
+        finally:
+            db.close()
     elif type == "public-keyword":
         size = size if 0 < size < 101 else 25
 
@@ -805,6 +837,11 @@ async def create_chat(request: Request, ndcId: int = 0):
                 description=data.get("content", ""),
                 icon=data.get("icon"),
             )
+            if (data.get("extensions") or {}).get("fansOnly") is True:
+                from helpers.fan_access import club_enabled
+
+                if await club_enabled(db, ndcId, trigger_uid):
+                    chatObj["fansOnly"] = True
         else:
             chatObj = ModelFabric.Construct(
                 Community.Chats,
@@ -960,6 +997,16 @@ async def get_chat_messages(
     start = parse_page_token(pageToken, 0)
 
     db = await Database().init()
+    from helpers.fan_access import can_use_fans_chat
+
+    if not await can_use_fans_chat(
+        db,
+        ndcId,
+        await db.get(f"x{ndcId}", "Chats").find_one({"id": chatId}),
+        request.state.session.get("uid"),
+    ):
+        db.close()
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
     table = db.get(f"x{ndcId}", f"_Chat:{chatId}")
     messages = [
         item
@@ -998,6 +1045,23 @@ async def get_chat_messages(
                 global_user=global_user,
             )
         )
+
+    from routers.reactions import message_summaries
+
+    summaries = await message_summaries(
+        db,
+        ndcId,
+        chatId,
+        [m.get("messageId") for m in messages],
+        request.state.session.get("uid"),
+    )
+    for item in messageList:
+        summary = summaries.get(item.get("messageId"))
+        if summary and isinstance(item, dict):
+            item["extensions"] = {
+                **(item.get("extensions") or {}),
+                "reactionSummary": summary,
+            }
 
     if len(messages) > 0:
         answer = Base.Answer(
@@ -1064,10 +1128,7 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
             or (
                 not is_call_state
                 and data["type"] == 3
-                and (
-                    not isinstance(data.get("stickerId"), str)
-                    or not data["stickerId"].startswith("e/")
-                )
+                and not isinstance(data.get("stickerId"), str)
             )
             or (
                 not is_call_state
@@ -1092,6 +1153,11 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
     if trigger_uid not in chat_info["memberList"]:
         db.close()
         return Errors.UserNotJoined(timestamp() - t1, lang=request.state.lang)
+    from helpers.fan_access import can_use_fans_chat
+
+    if not await can_use_fans_chat(db, ndcId, chat_info, trigger_uid):
+        db.close()
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
 
     if data.get("content"):
         if len(data["content"]) > Config.MAX_TEXT_SIZE:
@@ -1206,13 +1272,23 @@ async def send_message(request: Request, chatId: str, ndcId: int = 0):
             extensions.update(Chat.InternalSticker(data["stickerId"][2:]))
             data["mediaType"] = 113
             mediaLink = f"ndcsticker://{data['stickerId']}"
-        # elif is_valid_uuid4(data["stickerId"]):
-        # should be a custom sticker, but since we dont implemented it still...
-        # [NOTE]: please implement it normally
-        else:
+        elif data["stickerId"].startswith("e/"):
             extensions.update(Chat.InternalSticker(data["stickerId"]))
             data["mediaType"] = 113
             mediaLink = f"ndcsticker://{data['stickerId']}"
+        else:
+            # custom sticker: own pack, an owned pack or this community's shared pack
+            from routers.personal_stickers import resolve_chat_sticker
+
+            sticker = await resolve_chat_sticker(
+                db, ndcId, trigger_uid, data["stickerId"]
+            )
+            if not sticker:
+                db.close()
+                return Errors.InvalidMessage(timestamp() - t1, lang=request.state.lang)
+            extensions.update({"sticker": sticker})
+            data["mediaType"] = 113
+            mediaLink = sticker["icon"]
         """        
         else:
             print("invalid stickerId:", data["stickerId"])
@@ -2041,10 +2117,32 @@ async def tip_chat(request: Request, chatId: str, ndcId: int = 0):
 
     host_id = chat_info.get("hostId")
 
-    # Deduct from sender and credit chat host
-    await users_table.update_one({"id": trigger_uid}, {"$inc": {"coins": -coins}})
+    # Deduct from sender (only if the balance still covers it) and credit chat host
+    if not await coin_ledger.debit(connection, trigger_uid, coins):
+        connection.close()
+        return Errors.NotEnoughCoins(timestamp() - t1, lang=request.state.lang)
+    await coin_ledger.record(
+        connection,
+        trigger_uid,
+        -coins,
+        "tip_sent",
+        ndcId,
+        targetType="chat",
+        targetId=chatId,
+        title=chat_info.get("title"),
+    )
     if host_id:
         await users_table.update_one({"id": host_id}, {"$inc": {"coins": coins}})
+        await coin_ledger.record(
+            connection,
+            host_id,
+            coins,
+            "tip_received",
+            ndcId,
+            targetType="chat",
+            targetId=chatId,
+            title=chat_info.get("title"),
+        )
 
     # Update chat tipInfo leaderboard
     tip_info = chat_info.get("tipInfo", {})
@@ -2396,6 +2494,11 @@ async def join_chat(request: Request, chatId: str, userId: str, ndcId: int = 0):
     if userId in chat_info["bannedUids"]:
         connection.close()
         return Errors.RemovedFromChat(timestamp() - t1, lang=request.state.lang)
+    from helpers.fan_access import can_use_fans_chat
+
+    if not await can_use_fans_chat(connection, ndcId, chat_info, userId):
+        connection.close()
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
 
     messageId = str(uuid4())
 
@@ -2708,3 +2811,25 @@ async def chat_alert_options(
     )
     db.close()
     return Base.Answer(spent_time=timestamp() - t1)
+
+
+@chats.post("/g/s/chat/thread/{chatId}/pin")
+@chats.post("/x{ndcId}/s/chat/thread/{chatId}/pin")
+@chats.post("/g/s/chat/thread/{chatId}/unpin")
+@chats.post("/x{ndcId}/s/chat/thread/{chatId}/unpin")
+async def pin_chat(request: Request, chatId: str, ndcId: int = 0):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession()
+    db = await Database().init()
+    try:
+        uid = request.state.session.get("uid")
+        pinned = request.url.path.endswith("/pin")
+        if not await set_pin(db, uid, ndcId, chatId, pinned):
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        return Base.Answer(
+            {"thread": await Chat.Info(chatId, db, ndcId=ndcId, trigger_uid=uid)},
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()

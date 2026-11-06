@@ -54,6 +54,25 @@ class CachableRoute(APIRoute):
                 await CacheProcessor.Make(hashed_ip, 5, "ip:", 300)
                 return Errors.IpFrozen()
 
+            # Stateful private streams must authenticate and read current storage.
+            path = request.scope["path"]
+            live = any(
+                part in path
+                for part in ("/chat/", "/notification", "/notice", "/reminder")
+            )
+            if (
+                live
+                or request.headers.get("NDCAUTH")
+                or request.method not in ("GET", "HEAD")
+            ):
+                valid, error = await RequestProcessor.Validate(request)
+                if not valid:
+                    return error
+                response = await original_route_handler(request)
+                response.headers.update(self.main_headers)
+                response.headers["cache-control"] = "no-store"
+                return response
+
             # if request cached
             key = await self.make_key_for_cache(request)
             result = await CacheProcessor.Get(key, "creq:")

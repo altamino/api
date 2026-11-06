@@ -28,8 +28,8 @@ class Push:
 
     @staticmethod
     def ChatMessage(chat: dict, message: dict, author: dict, ndcId: int = 0) -> dict:
-        nickname = author.get("nickname", "")
-        content = message.get("content", "[Attachment]")
+        nickname = author.get("nickname") or ""
+        content = message.get("content") or "[Attachment]"
         title = chat.get("title")
 
         return Push.Payload(

@@ -144,6 +144,9 @@ async def settle_user_active_coins(db, uid: str) -> float:
     if total > 0:
         total = round(total, 2)
         await db.get(table="Users").update_one({"id": uid}, {"$inc": {"coins": total}})
+        from helpers import coin_ledger
+
+        await coin_ledger.record(db, uid, total, "active_time_reward")
     return total
 
 

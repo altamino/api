@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse, RedirectResponse
 from routers.static_things import static_things
 
-from objects import Errors
+from objects import Base, Errors
+from helpers.decorators.bbnonsfw import ModerationUnavailable
 
 # routes
 from routers.altacm import altacm
@@ -26,12 +27,29 @@ from routers.upload_media import upload_media
 from routers.altteam import altteam
 from routers.store import store
 from routers.notification import notification_methods
+from routers.personal_stickers import personal_stickers, sticker_assets
+from routers.amino_plus import amino_plus
+from helpers.renewals import lifespan as renewals_lifespan
+from routers.blog_categories import blog_categories
+from routers.bookmarks import bookmarks
+from routers.catalog import catalog
+from routers.fan_clubs import fan_clubs
+from routers.flag_center import flag_center
+from routers.reactions import reactions
+from routers.shared_folder import shared_folder
+from routers.wallet_history import wallet_history
 import logging
 import time
 
 # app things
 
-app = FastAPI(title="AltAmino", version="1", docs_url=None, redoc_url=None)
+app = FastAPI(
+    title="AltAmino",
+    version="1",
+    docs_url=None,
+    redoc_url=None,
+    lifespan=renewals_lifespan,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -77,6 +95,13 @@ async def health():
 
 
 app.include_router(mock, prefix="/api/v1")
+app.include_router(
+    reactions, prefix="/api/v1"
+)  # before chats, see routers/reactions.py
+app.include_router(catalog, prefix="/api/v1")  # before blogs, see routers/catalog.py
+app.include_router(
+    blog_categories, prefix="/api/v1"
+)  # before blogs, see routers/blog_categories.py
 app.include_router(chats, prefix="/api/v1")
 app.include_router(turtle, prefix="/api/v1")
 app.include_router(links, prefix="/api/v1")
@@ -92,6 +117,14 @@ app.include_router(altacm, prefix="/api/v1")
 app.include_router(altteam, prefix="/api/v1")
 app.include_router(store, prefix="/api/v1")
 app.include_router(notification_methods, prefix="/api/v1")
+app.include_router(amino_plus, prefix="/api/v1")
+app.include_router(bookmarks, prefix="/api/v1")
+app.include_router(fan_clubs, prefix="/api/v1")
+app.include_router(flag_center, prefix="/api/v1")
+app.include_router(shared_folder, prefix="/api/v1")
+app.include_router(wallet_history, prefix="/api/v1")
+app.include_router(personal_stickers, prefix="/api/v1")
+app.include_router(sticker_assets)
 app.include_router(static_things)
 
 # brotli can break amino libraries, but it's easy to fix
@@ -123,6 +156,24 @@ async def custom_404_handler(_, __):
 async def custom_422_handler(_, exc: RequestValidationError):
     print(exc.errors())
     return Errors.CantProcessData(lang=_.headers.get("NDCLANG", "en"))
+
+
+@app.exception_handler(ModerationUnavailable)
+async def media_analysis_unavailable(request, error):
+    lang = request.headers.get("NDCLANG", "en").lower().split("-")[0]
+    messages = {
+        "en": "Image analysis is temporarily unavailable. Please try again in a moment.",
+        "pt": "A análise da imagem está temporariamente indisponível. Tente novamente em instantes.",
+        "es": "El análisis de la imagen no está disponible temporalmente. Inténtalo de nuevo en un momento.",
+        "ru": "Проверка изображения временно недоступна. Повторите попытку через некоторое время.",
+    }
+    response = Base.Answer(
+        api_status_code=500,
+        html_status_code=503,
+        api_message=messages.get(lang, messages["en"]),
+    )
+    response.headers["Retry-After"] = "2"
+    return response
 
 
 @app.exception_handler(500)

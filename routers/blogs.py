@@ -12,6 +12,7 @@ from pymongo import DESCENDING
 
 from helpers.database.models import Community, ModelFabric
 from helpers.database.mongo import Database
+from helpers import coin_ledger
 from helpers.tipping_limiter import check_and_increment_tipping_limit
 from helpers.decorators.turtlelimit import TurtleTime, turtlelimiter
 from helpers.decorators.strikecheck import strike_check
@@ -40,6 +41,11 @@ def _wrap_wiki_for_blog_feed(item):
     wrapper["refObjectId"] = item_id
     wrapper["refObjectType"] = 2
     wrapper["refObject"] = ref_object
+    author = ref_object.get("author")
+    if isinstance(author, dict) and "catalogAuthorRole" in author:
+        real = {k: v for k, v in author.items() if k != "catalogAuthorRole"}
+        real["role"] = author["catalogAuthorRole"]
+        wrapper["author"] = real
     return wrapper
 
 
@@ -60,6 +66,12 @@ async def reorder_featured_blogs(request: Request, ndcId: int, body: dict):
     base_time = body.get("timestamp", int(time() * 1000))
 
     db = await Database().init()
+    from routers.moderation_tools import check_rights
+
+    allowed, _ = await check_rights(db, request.state.session["uid"], ndcId)
+    if not allowed:
+        db.close()
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
     table = db.get(f"x{ndcId}", "Blogs")
 
     for index, object_id in enumerate(object_id_list):
@@ -90,6 +102,7 @@ async def get_featured_blogs(
     table = db.get(f"x{ndcId}", "Blogs")
     current_time = int(time() * 1000)
     query = {
+        "catalogSourceItemId": {"$exists": False},
         "$or": [
             {
                 "featuredType": 1,
@@ -106,7 +119,7 @@ async def get_featured_blogs(
                 },
             },
             {"featuredType": 2},
-        ]
+        ],
     }
 
     blogs = [
@@ -166,7 +179,13 @@ async def get_blog_category_list(
         query = {"featuredType": {"$in": [1, 2]}}
         sort_field = "featuredTime"
     else:
-        query = {"categoryId": categoryId}
+        query = {
+            "$or": [
+                {"taggedBlogCategoryIdList": categoryId},
+                {"categoryId": categoryId},
+            ],
+            "status": 0,
+        }
         sort_field = "createdTime"
 
     blogs = [
@@ -211,6 +230,7 @@ async def get_featured_more(
     table = db.get(f"x{ndcId}", "Blogs")
     current_time = int(time() * 1000)
     query = {
+        "catalogSourceItemId": {"$exists": False},
         "featuredType": 1,
         "$expr": {
             "$lte": [
@@ -281,7 +301,7 @@ async def get_latest_blog_posts(
     db = await Database().init()
     table = db.get(f"x{ndcId}", "Blogs")
 
-    query = {}
+    query = {"catalogSourceItemId": {"$exists": False}}
     if q:
         query["title"] = {"$regex": regex_escape(q.strip()), "$options": "i"}
 
@@ -335,6 +355,11 @@ async def get_blogs(
     query = {}
     if is_wiki:
         query["blogType"] = 2
+        query["status"] = 0
+        if type == "catalog-all":
+            query["isCurated"] = True
+    else:
+        query["catalogSourceItemId"] = {"$exists": False}
 
     if q or uid:
         raw_q = q.strip() if q else uid.strip()
@@ -347,13 +372,20 @@ async def get_blogs(
         else:
             query["title"] = {"$regex": regex_escape(raw_q), "$options": "i"}
 
-    blogs = [
-        item
-        async for item in table.find(query)
-        .skip(start)
-        .limit(size)
-        .sort("createdTime", DESCENDING)
-    ]
+    if is_wiki and type == "user-all" and "authorId" in query:
+        from routers.catalog import profile_item_rows
+
+        blogs = (await profile_item_rows(db, ndcId, query["authorId"]))[
+            start : start + size
+        ]
+    else:
+        blogs = [
+            item
+            async for item in table.find(query)
+            .skip(start)
+            .limit(size)
+            .sort("createdTime", DESCENDING)
+        ]
 
     blogList = [
         await Blog.Info(
@@ -361,6 +393,13 @@ async def get_blogs(
         )
         for item in blogs
     ]
+    extra = {}
+    if is_wiki:
+        from routers.catalog import favorites_mapping
+
+        extra["inMyFavoritesMapping"] = await favorites_mapping(
+            db, ndcId, request.state.session.get("uid"), [item["id"] for item in blogs]
+        )
     if not is_wiki:
         blogList = [_wrap_wiki_for_blog_feed(item) for item in blogList]
 
@@ -371,6 +410,7 @@ async def get_blogs(
         {
             key_name: blogList,
             "paging": calculate_page_tokens(start, size, blogList),
+            **extra,
         },
         spent_time=timestamp() - t1,
     )
@@ -452,6 +492,14 @@ async def get_blog(
 
     blog = await table.find_one({"id": blogId})
     if blog:
+        if (blog.get("extensions") or {}).get("fansOnly"):
+            from helpers.fan_access import can_read_fan_content
+
+            if not await can_read_fan_content(
+                db, ndcId, blog.get("authorId"), request.state.session.get("uid")
+            ):
+                db.close()
+                return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
         if blog.get("featuredType") == 1:
             current_time = int(time() * 1000)
             expires_at = (
@@ -463,11 +511,19 @@ async def get_blog(
         blog_info = await Blog.Info(
             blog, db, ndcId=ndcId, trigger_uid=request.state.session.get("uid")
         )
+        extra = {}
+        if blog["blogType"] == 2:
+            from routers.catalog import favorites_mapping
+
+            mapping = await favorites_mapping(
+                db, ndcId, request.state.session.get("uid"), [blog["id"]]
+            )
+            extra["inMyFavorites"] = mapping.get(blog["id"], 0)
         db.close()
 
         answ_key = "item" if blog["blogType"] == 2 else "blog"
         return Base.Answer(
-            {answ_key: blog_info},
+            {answ_key: blog_info, **extra},
             spent_time=timestamp() - t1,
         )
 
@@ -498,7 +554,13 @@ async def edit_blog(request: Request, blogId: str, ndcId: int = 0):
         db.close()
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
 
-    if blog["authorId"] != trigger_uid:
+    if blog.get("catalogSourceItemId"):
+        from helpers.community_access import staff_level
+
+        allowed = bool(await staff_level(db, ndcId, trigger_uid))
+    else:
+        allowed = blog["authorId"] == trigger_uid
+    if not allowed:
         db.close()
         return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
 
@@ -512,6 +574,16 @@ async def edit_blog(request: Request, blogId: str, ndcId: int = 0):
         preparedQueries["content"] = data["content"]
     if "mediaList" in data:
         preparedQueries["mediaList"] = data["mediaList"]
+    if data.get("taggedBlogCategoryIdList") is not None:
+        from routers.blog_categories import valid_category_ids
+
+        category_ids = await valid_category_ids(
+            db, ndcId, data["taggedBlogCategoryIdList"]
+        )
+        if category_ids is None:
+            db.close()
+            return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+        preparedQueries["taggedBlogCategoryIdList"] = category_ids
 
     extensions = data.get("extensions", {})
     if extensions:
@@ -533,6 +605,13 @@ async def edit_blog(request: Request, blogId: str, ndcId: int = 0):
             current_extensions["commentAllowance"] = extensions[
                 "privilegeOfCommentOnPost"
             ]
+        if "fansOnly" in extensions:
+            from helpers.fan_access import club_enabled
+
+            current_extensions["fansOnly"] = bool(
+                extensions["fansOnly"] is True
+                and await club_enabled(db, ndcId, trigger_uid)
+            )
 
         if "props" in extensions:
             preparedQueries["props"] = [
@@ -565,7 +644,6 @@ async def edit_blog(request: Request, blogId: str, ndcId: int = 0):
 @blog_methods.delete("/g/s/blog/{blogId}")
 @blog_methods.delete("/x{ndcId}/s/blog/{blogId}")
 @blog_methods.delete("/x{ndcId}/s/item/{blogId}")
-@blog_methods.post("/x{ndcId}/s/item/{blogId}/batch-delete")
 @not_banned()
 async def delete_blog(request: Request, blogId: str, ndcId: int = 0):
     t1 = timestamp()
@@ -583,6 +661,13 @@ async def delete_blog(request: Request, blogId: str, ndcId: int = 0):
         return Errors.DataNotExist(timestamp() - t1, lang=request.state.lang)
     users = db.get(f"x{ndcId}", "Users")
     user = await users.find_one({"id": trigger_uid})
+    if (
+        blog.get("catalogSourceItemId")
+        and blog["authorId"] == trigger_uid
+        and not (user and UserRole.is_global_staff(user.get("role", 0)))
+    ):
+        db.close()  # staff take catalog copies out through the catalog (batch-delete)
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
     if blog["authorId"] != trigger_uid and (
         not user or not UserRole.is_global_staff(user.get("role", 0))
     ):
@@ -763,6 +848,11 @@ async def post_blog(request: Request, ndcId: int = 0):
         "style": {},
         "coverAnimation": extensions.get("coverAnimation", "none"),
     }
+    if extensions.get("fansOnly") is True:
+        from helpers.fan_access import club_enabled
+
+        if await club_enabled(db, ndcId, trigger_uid):
+            useful_extensions["fansOnly"] = True
     for k in [
         "backgroundMediaList",
         "backgroundColor",
@@ -844,6 +934,17 @@ async def post_blog(request: Request, ndcId: int = 0):
         blog_data["quizPlayedTimes"] = 0
         blog_data["quizResults"] = {}
 
+    if data.get("taggedBlogCategoryIdList") is not None and blog_type != 2:
+        from routers.blog_categories import valid_category_ids
+
+        category_ids = await valid_category_ids(
+            db, ndcId, data["taggedBlogCategoryIdList"]
+        )
+        if category_ids is None:
+            db.close()
+            return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+        blog_data["taggedBlogCategoryIdList"] = category_ids
+
     table = db.get(f"x{ndcId}", "Blogs")
     await table.insert_one(blog_data)
 
@@ -897,10 +998,32 @@ async def tip_blog(request: Request, blogId: str, ndcId: int = 0):
 
     author_uid = blog.get("authorId")
 
-    # Deduct from sender and credit author
+    # Deduct from sender (only if the balance still covers it) and credit author
     if author_uid:
-        await users_table.update_one({"id": trigger_uid}, {"$inc": {"coins": -coins}})
+        if not await coin_ledger.debit(db, trigger_uid, coins):
+            db.close()
+            return Errors.NotEnoughCoins(timestamp() - t1, lang=request.state.lang)
         await users_table.update_one({"id": author_uid}, {"$inc": {"coins": coins}})
+        await coin_ledger.record(
+            db,
+            trigger_uid,
+            -coins,
+            "tip_sent",
+            ndcId,
+            targetType="blog",
+            targetId=blogId,
+            title=blog.get("title"),
+        )
+        await coin_ledger.record(
+            db,
+            author_uid,
+            coins,
+            "tip_received",
+            ndcId,
+            targetType="blog",
+            targetId=blogId,
+            title=blog.get("title"),
+        )
     else:
         db.close()
         return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)
@@ -1265,6 +1388,53 @@ async def get_quiz_result_ranking(
 
 
 # feeds
+
+
+@blog_methods.get("/x{ndcId}/s/feed/blog-disabled")
+async def get_disabled_blogs(
+    request: Request,
+    ndcId: int,
+    pageToken: str | None = None,
+    start: int = 0,
+    size: int = 25,
+):
+    """Posts hidden by moderators (status 9): staff-only list of the Advanced menu."""
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+    size = size if 0 < size < 101 else 25
+    start = parse_page_token(pageToken, start)
+
+    db = await Database().init()
+    try:
+        from routers.moderation_tools import check_rights
+
+        allowed, _ = await check_rights(db, request.state.session["uid"], ndcId)
+        if not allowed:
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(f"x{ndcId}", "Blogs")
+        blogs = [
+            item
+            async for item in table.find({"status": 9})
+            .skip(start)
+            .limit(size)
+            .sort("modifiedTime", DESCENDING)
+        ]
+        blogList = [
+            await Blog.Info(
+                item, db, ndcId=ndcId, trigger_uid=request.state.session.get("uid")
+            )
+            for item in blogs
+        ]
+        return Base.Answer(
+            {
+                "blogList": blogList,
+                "paging": calculate_page_tokens(start, size, blogList),
+            },
+            spent_time=timestamp() - t1,
+        )
+    finally:
+        db.close()
 
 
 @blog_methods.get("/g/s/feed/quiz-best-quizzes")

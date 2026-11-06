@@ -1,3 +1,5 @@
+from helpers.live_activity import activity_users
+from helpers.follow_state import project_profiles
 from re import escape as regex_escape
 from time import time as timestamp
 from pymongo import DESCENDING
@@ -10,6 +12,7 @@ from helpers.checkins import compute_streak, local_date, get_tz
 from helpers.aioyaml import aioyaml
 from helpers.database.models import dttmn
 from helpers.database.mongo import Database
+from helpers import coin_ledger
 from helpers.decorators.turtlelimit import TurtleTime, turtlelimiter
 from helpers.decorators.validauth import validauth_required
 from helpers.functions import calculate_page_tokens, is_app_link, parse_page_token
@@ -25,7 +28,7 @@ from helpers.adminWS import ApiBroadcastType
 from services.store import StoreService
 from objects.types import UserRole, OnlineStatus
 from objects.types.store import StoreItemType
-from helpers.store import _iso
+from helpers.store import _iso, _restriction
 from helpers.tipping_limiter import check_and_increment_tipping_limit
 from helpers.constraint_decorator import not_banned
 
@@ -362,7 +365,12 @@ async def join_community(request: Request, ndcId: int):
 
         asyncio.get_event_loop().create_task(
             send_admin_ws(
-                {"ndcId": ndcId, "user": User.GetUserInfo(user_info, ndcId)},
+                {
+                    "ndcId": ndcId,
+                    "user": User.GetUserInfo(
+                        user_info, ndcId, triggerUserId=request.state.session.get("uid")
+                    ),
+                },
                 None,
                 ApiBroadcastType.ChatMessagePush,
             )
@@ -567,6 +575,7 @@ async def get_community_profiles(
         "curators": {"role": 101},
         "recent": {"status": {"$nin": [9, 10, 5]}},
         "summary": {"status": {"$nin": [9, 10, 5]}},  # banned, deleted, leaved
+        "banned": {"status": 9},  # staff only, checked below
         "featured": {
             "featuredType": 4,
             "$expr": {
@@ -596,6 +605,12 @@ async def get_community_profiles(
 
     db = await Database().init()
     try:
+        if type == "banned":
+            from routers.moderation_tools import check_rights
+
+            allowed, _ = await check_rights(db, request.state.session.get("uid"), ndcId)
+            if not allowed:
+                return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
         table = db.get(f"x{ndcId}", "Users")
         g_table = db.get(table="Users")
 
@@ -628,9 +643,14 @@ async def get_community_profiles(
                     ]
 
             items.append(
-                User.OwnNonSensetiveProfile(item, ndcId=ndcId, membershipStatus=1)
+                User.GetUserInfo(
+                    item, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+                )
             )
 
+        items = await project_profiles(
+            db, ndcId, request.state.session.get("uid"), items
+        )
         return Base.Answer(
             {
                 "userProfileCount": total,
@@ -638,6 +658,36 @@ async def get_community_profiles(
             },
             spent_time=timestamp() - t1,
         )
+    finally:
+        db.close()
+
+
+@communities.post("/x{ndcId}/s/user-profile/featured/reorder")
+@not_banned()
+async def reorder_featured_users(request: Request, ndcId: int, body: dict):
+    t1 = timestamp()
+    if not request.state.session["validsession"]:
+        return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
+
+    uid_list = body.get("uidList") or []
+    if not isinstance(uid_list, list) or len(uid_list) > 100:
+        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
+    base_time = body.get("timestamp", int(timestamp() * 1000))
+
+    db = await Database().init()
+    try:
+        from routers.moderation_tools import check_rights
+
+        allowed, _ = await check_rights(db, request.state.session["uid"], ndcId)
+        if not allowed:
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        table = db.get(f"x{ndcId}", "Users")
+        for index, uid in enumerate(uid_list):
+            await table.update_one(
+                {"id": uid, "featuredType": 4},
+                {"$set": {"featuredTime": base_time - index}},
+            )
+        return Base.Answer(spent_time=timestamp() - t1)
     finally:
         db.close()
 
@@ -681,9 +731,12 @@ async def get_user_groups(
 
         users_by_id = {}
         async for u in table.find({"id": {"$in": favIds}}):
-            users_by_id[u["id"]] = User.GetUserInfo(u, ndcId=ndcId)
+            users_by_id[u["id"]] = User.GetUserInfo(
+                u, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            )
 
         userProfileList = [users_by_id[fid] for fid in favIds if fid in users_by_id]
+        userProfileList = await project_profiles(db, ndcId, uid, userProfileList)
     finally:
         db.close()
 
@@ -934,8 +987,39 @@ async def live_layer_topic(
                 except ValueError:
                     pass
 
-    all_uids = await _get_online_uids(effective_ndcId, topic)
+    if (
+        not request.state.session.get("validsession")
+        or start < 0
+        or not 1 <= size <= 100
+    ):
+        return Errors.InvalidRequest()
+    if ndcId and effective_ndcId != ndcId:
+        return Errors.InvalidRequest()
+    if topic.startswith("ndtopic:"):
+        scope = topic.split(":", 2)[1]
+        expected = "x" + str(effective_ndcId) if effective_ndcId else "g"
+        if scope != expected:
+            return Errors.InvalidRequest()
+    db = await Database().init()
+    try:
+        viewer = await db.get(f"x{effective_ndcId}", "Users").find_one(
+            {"id": request.state.session["uid"], "status": {"$nin": [5, 9, 10]}}
+        )
+        if not viewer:
+            return Errors.NotEnoughRights()
+    finally:
+        db.close()
+    all_uids = await activity_users(effective_ndcId, topic)
+    if all_uids is None:
+        all_uids = await _get_online_uids(effective_ndcId, topic)
     profiles = await _get_profiles_for_live_layer(effective_ndcId, all_uids)
+    db = await Database().init()
+    try:
+        profiles = await project_profiles(
+            db, effective_ndcId, request.state.session["uid"], profiles
+        )
+    finally:
+        db.close()
     total = len(profiles)
     page_profiles = profiles[start : start + size]
 
@@ -1233,7 +1317,9 @@ my-collection
 """
 
 
-async def _shape_collection(db, doc: dict, ndcId: int, includeStickers: bool) -> dict:
+async def _shape_collection(
+    db, doc: dict, ndcId: int, includeStickers: bool, reader_uid: str | None = None
+) -> dict:
     doc = dict(doc)
     doc.pop("_id", None)
 
@@ -1255,6 +1341,23 @@ async def _shape_collection(db, doc: dict, ndcId: int, includeStickers: bool) ->
             author = User.GetUserInfo(author_doc, ndcId=ndcId)
 
     doc["author"] = author
+    # The APK reads uid(), restrictionInfo and ownershipInfo, not the storage columns.
+    doc["uid"] = creator_id or doc.get("uid")
+    restriction = _restriction(
+        price=doc.get("price", 0),
+        restrictType=doc.get("restrictType"),
+        discountStatus=doc.get("discountStatus"),
+        discountValue=doc.get("discountValue"),
+        availableDuration=doc.get("availableDuration", 0),
+    )
+    # Native canUseSticker recognizes 3 (free), 4 (coins) and 2 (A+).
+    # Database FREE=1 is an acquisition rule, not a usable native pack restriction.
+    if restriction["restrictType"] == 1 and not doc.get("price", 0):
+        restriction["restrictType"] = 3
+    doc["restrictionInfo"] = restriction
+    owned = await _is_owned(db, reader_uid, doc["collectionId"]) if reader_uid else None
+    doc["ownershipInfo"] = (owned or {}).get("ownershipInfo")
+    doc["isActivated"] = bool((owned or {}).get("isActivated"))
     return doc
 
 
@@ -1365,7 +1468,9 @@ async def get_sticker_collection(
                 spent_time=timestamp() - t1, lang=request.state.lang
             )
 
-        collection = await _shape_collection(db, doc, ndcId, includeStickers)
+        collection = await _shape_collection(
+            db, doc, ndcId, includeStickers, reader_uid=request.state.session.get("uid")
+        )
     finally:
         db.close()
 
@@ -1398,6 +1503,9 @@ async def sticker_collections(
         table = db.get(table="StickerCollections")
 
         if type in ("my-active-collection", "my-favorite-collection"):
+            from routers.personal_stickers import sync_personal
+
+            await sync_personal(db, trigger_uid, request.state.lang)
             owned_query = {
                 "uid": trigger_uid,
                 "objectType": StoreItemType.StickerCollection,
@@ -1431,7 +1539,15 @@ async def sticker_collections(
         async for doc in (
             table.find(query).sort([("createdTime", -1)]).skip(start).limit(size)
         ):
-            items.append(await _shape_collection(db, doc, ndcId, includeStickers))
+            items.append(
+                await _shape_collection(
+                    db,
+                    doc,
+                    ndcId,
+                    includeStickers,
+                    reader_uid=request.state.session.get("uid"),
+                )
+            )
     finally:
         db.close()
 
@@ -1575,7 +1691,13 @@ async def create_sticker_collection(
         # автор сразу владеет и активирует собственный пак
         await _grant_ownership(db, trigger_uid, collection_id, isActivated=True)
 
-        result = await _shape_collection(db, collection, ndcId, includeStickers=True)
+        result = await _shape_collection(
+            db,
+            collection,
+            ndcId,
+            includeStickers=True,
+            reader_uid=request.state.session.get("uid"),
+        )
     finally:
         db.close()
 
@@ -1771,7 +1893,13 @@ async def edit_sticker_collection(
 
         await table.update_one({"collectionId": collectionId}, {"$set": set_ops})
         updated = await table.find_one({"collectionId": collectionId})
-        collection = await _shape_collection(db, updated, ndcId, includeStickers=True)
+        collection = await _shape_collection(
+            db,
+            updated,
+            ndcId,
+            includeStickers=True,
+            reader_uid=request.state.session.get("uid"),
+        )
     finally:
         db.close()
 
@@ -1901,7 +2029,13 @@ async def _set_collection_activation(
                 spent_time=timestamp() - t1, lang=request.state.lang
             )
 
-        collection = await _shape_collection(db, doc, ndcId, includeStickers=True)
+        collection = await _shape_collection(
+            db,
+            doc,
+            ndcId,
+            includeStickers=True,
+            reader_uid=request.state.session.get("uid"),
+        )
     finally:
         db.close()
 
@@ -1972,10 +2106,30 @@ async def tipping(request: Request, ndcId: int = 0):
 
     author_uid = _object.get("authorId")
 
-    # Deduct from sender and credit author
+    # Deduct from sender (only if the balance still covers it) and credit author
     if author_uid:
-        await users_table.update_one({"id": trigger_uid}, {"$inc": {"coins": -coins}})
+        if not await coin_ledger.debit(db, trigger_uid, coins):
+            db.close()
+            return Errors.NotEnoughCoins(timestamp() - t1, lang=request.state.lang)
         await users_table.update_one({"id": author_uid}, {"$inc": {"coins": coins}})
+        await coin_ledger.record(
+            db,
+            trigger_uid,
+            -coins,
+            "tip_sent",
+            ndcId,
+            targetId=objectId,
+            title=_object.get("title"),
+        )
+        await coin_ledger.record(
+            db,
+            author_uid,
+            coins,
+            "tip_received",
+            ndcId,
+            targetId=objectId,
+            title=_object.get("title"),
+        )
     else:
         db.close()
         return Errors.DataNotExist(spent_time=timestamp() - t1, lang=request.state.lang)

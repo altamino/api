@@ -1,3 +1,5 @@
+from helpers.follow_state import project_profiles, project_profile
+from pymongo import ReturnDocument
 import random
 from datetime import UTC, datetime, timedelta
 from re import escape as regex_escape
@@ -39,6 +41,7 @@ from helpers.checkins import (
 
 from helpers.database.models import Community, ModelFabric
 from helpers.database.mongo import Database
+from helpers import coin_ledger
 from helpers.decorators.turtlelimit import TurtleTime, turtlelimiter
 from helpers.decorators.strikecheck import strike_check
 from helpers.functions import calculate_page_tokens, parse_page_token
@@ -151,8 +154,15 @@ async def user_search(
             async with await StoreService.create(item["id"], ndcId) as svc:
                 merged["iconFrame"] = await svc.frame_icon(merged.get("frameId"))
 
-            userProfileList.append(User.GetUserInfo(merged, ndcId=ndcId))
+            userProfileList.append(
+                User.GetUserInfo(
+                    merged, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+                )
+            )
 
+        userProfileList = await project_profiles(
+            db, ndcId, request.state.session.get("uid"), userProfileList
+        )
         if userProfileList:
             return Base.Answer(
                 {
@@ -349,6 +359,11 @@ async def community_general_check(request: Request, ndcId: int):
         global_table = db.get(table="Users")
         row = await table.find_one({"id": trigger_uid})
         gl_row = await global_table.find_one({"id": trigger_uid})
+        from helpers.community_access import pending_staff_counts
+
+        staff_counts = (
+            await pending_staff_counts(db, ndcId, trigger_uid) if row else None
+        )
     finally:
         db.close()
 
@@ -368,12 +383,15 @@ async def community_general_check(request: Request, ndcId: int):
             "hasCheckInToday": checked_in_today,
             "consecutiveCheckInDays": compute_streak(history, today),
             "canPlayLottery": gl_row.get("lastLotteryDate") != today_str,
-            "userProfile": User.GetUserInfo(row, ndcId=ndcId),
+            "userProfile": User.GetUserInfo(
+                row, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            ),
             "notificationsCount": 0,
             "noticesCount": 0,
             "hasPendingReviewRequest": False,
             "promotion": None,
             "communityMembershipRequestStatus": 0,
+            "communityGeneralCheckResult": staff_counts,
         },
         spent_time=timestamp() - t1,
     )
@@ -452,6 +470,7 @@ async def claim_daily_reward(request: Request, ndcId: int = 0):
         await table.update_one({"id": trigger_uid}, {"$inc": {"reputation": rep}})
 
         await global_table.update_one({"id": trigger_uid}, {"$inc": {"coins": coins}})
+        await coin_ledger.record(db, trigger_uid, coins, "daily_reward", ndcId)
 
         global_row = await global_table.find_one({"id": trigger_uid})
     finally:
@@ -469,7 +488,9 @@ async def claim_daily_reward(request: Request, ndcId: int = 0):
             "earnedReputationPoint": rep,
             "additionalReputationPoint": 0,
             "checkInHistory": build_checkin_history_obj(updated_row, tz),
-            "userProfile": User.GetUserInfo(updated_row, ndcId=ndcId),
+            "userProfile": User.GetUserInfo(
+                updated_row, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            ),
         },
         spent_time=timestamp() - t1,
     )
@@ -516,6 +537,7 @@ async def claim_daily_lottery(request: Request, ndcId: int = 0):
             return Errors.LotteryPlayed(timestamp() - t1, lang=request.state.lang)
 
         await global_table.update_one({"id": trigger_uid}, {"$inc": {"coins": award}})
+        await coin_ledger.record(db, trigger_uid, award, "lottery_reward", ndcId)
 
         updated_row = await table.find_one({"id": trigger_uid})
     finally:
@@ -533,7 +555,9 @@ async def claim_daily_lottery(request: Request, ndcId: int = 0):
                 "createdTime": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "refObject": None,
             },
-            "userProfile": User.GetUserInfo(updated_row, ndcId=ndcId),
+            "userProfile": User.GetUserInfo(
+                updated_row, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            ),
         },
         spent_time=timestamp() - t1,
     )
@@ -597,6 +621,7 @@ async def check_in_repair(request: Request, ndcId: int = 0):
             )
             if res.modified_count == 0:
                 return Errors.NotEnoughCoins(timestamp() - t1, lang=request.state.lang)
+            await coin_ledger.record(db, trigger_uid, -cost, "checkin_repair", ndcId)
 
         elif repair_method == REPAIR_METHOD_AMINOPLUS:
             if not global_row.get("isPaidSubscriber"):
@@ -650,16 +675,28 @@ async def get_user_following(
     db = await Database().init()
     xndcid_table = db.get(f"x{ndcId}", "Users")
     row = await xndcid_table.find_one({"id": uid})
+    if row is None:
+        db.close()
+        return Errors.AccountNotExist()
     following = row["following"][start : start + size]
 
     following_list = []
     for item in following:
         user = await xndcid_table.find_one({"id": item})
+        if user is None:
+            continue
         async with await StoreService.create(item, ndcId) as svc:
             user["iconFrame"] = await svc.frame_icon(user.get("frameId"))
 
-        following_list.append(User.GetUserInfo(user, ndcId=ndcId))
+        following_list.append(
+            User.GetUserInfo(
+                user, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            )
+        )
 
+    following_list = await project_profiles(
+        db, ndcId, request.state.session.get("uid"), following_list
+    )
     db.close()
     return Base.Answer({"userProfileList": following_list}, spent_time=timestamp() - t1)
 
@@ -674,15 +711,35 @@ async def get_user_followers(
     db = await Database().init()
     xndcid_table = db.get(f"x{ndcId}", "Users")
     row = await xndcid_table.find_one({"id": uid})
-    followers = row["whoFollows"][start : start + size]
+    if row is None:
+        db.close()
+        return Errors.AccountNotExist()
+    followers = [
+        p["id"]
+        async for p in xndcid_table.find(
+            {"following": uid, "status": {"$nin": [5, 9, 10]}}, {"id": 1}
+        )
+        .sort("_id", 1)
+        .skip(max(0, start))
+        .limit(max(1, min(size, 100)))
+    ]
     followers_list = []
     for item in followers:
         user = await xndcid_table.find_one({"id": item})
+        if user is None:
+            continue
         async with await StoreService.create(item, ndcId) as svc:
             user["iconFrame"] = await svc.frame_icon(user.get("frameId"))
 
-        followers_list.append(User.GetUserInfo(user, ndcId=ndcId))
+        followers_list.append(
+            User.GetUserInfo(
+                user, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            )
+        )
 
+    followers_list = await project_profiles(
+        db, ndcId, request.state.session.get("uid"), followers_list
+    )
     db.close()
     return Base.Answer({"userProfileList": followers_list}, spent_time=timestamp() - t1)
 
@@ -692,67 +749,72 @@ async def get_user_followers(
 @not_blocked()
 async def follow_user(uid: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
-    if not request.state.session["validsession"]:
+    if not request.state.session.get("validsession"):
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
-
-    suid = request.state.session["uid"]
-    if suid == uid:
+    actor = request.state.session["uid"]
+    if actor == uid:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
-
     db = await Database().init()
-    table = db.get(f"x{ndcId}", "Users")
-    target_user = await table.find_one({"id": uid})
-    inited_user = await table.find_one({"id": suid})
-    if suid not in target_user["whoFollows"] or uid not in inited_user["following"]:
-        await table.update_one({"id": uid}, {"$push": {"whoFollows": suid}})
-        await table.update_one({"id": suid}, {"$push": {"following": uid}})
-
-    async with await StoreService.create(suid, ndcId) as svc:
-        inited_user["iconFrame"] = await svc.frame_icon(inited_user.get("frameId"))
-
-    inviter = User.GetUserInfo(inited_user, triggerUserId=uid, ndcId=ndcId)
-
-    await create_notification(
-        db,
-        ndcId,
-        uid,
-        suid,
-        NotificationType.USER_MEMBERSHIP,
-    )
-
-    asyncio.get_event_loop().create_task(
-        send_admin_ws(
-            {
-                "ndcId": ndcId,
-                "user": inviter,
-            },
-            [uid],
-            ApiBroadcastType.NewFollowerPush,
+    try:
+        table = db.get(f"x{ndcId}", "Users")
+        valid = {"$nin": [5, 9, 10]}
+        target = await table.find_one({"id": uid, "status": valid})
+        if not target:
+            return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+        # Outgoing edge is authoritative. Atomic addToSet prevents duplicate edges
+        # and lets only the first concurrent/retried request create an alert.
+        before = await table.find_one_and_update(
+            {"id": actor, "status": valid},
+            {"$addToSet": {"following": uid}},
+            return_document=ReturnDocument.BEFORE,
         )
-    )
-
-    db.close()
-    return Base.Answer(spent_time=timestamp() - t1)
+        if not before:
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        await table.update_one({"id": uid}, {"$addToSet": {"whoFollows": actor}})
+        if uid not in (before.get("following") or []):
+            await create_notification(
+                db, ndcId, uid, actor, NotificationType.USER_MEMBERSHIP
+            )
+            fresh = await table.find_one({"id": actor})
+            async with await StoreService.create(actor, ndcId) as svc:
+                fresh["iconFrame"] = await svc.frame_icon(fresh.get("frameId"))
+            inviter = await project_profile(
+                db, ndcId, uid, User.GetUserInfo(fresh, triggerUserId=uid, ndcId=ndcId)
+            )
+            # Persist the existing native follower push before completing the request.
+            await send_admin_ws(
+                {"ndcId": ndcId, "user": inviter},
+                [uid],
+                ApiBroadcastType.NewFollowerPush,
+            )
+        profile = await project_profile(
+            db, ndcId, actor, User.GetUserInfo(target, triggerUserId=actor, ndcId=ndcId)
+        )
+        return Base.Answer({"userProfile": profile}, spent_time=timestamp() - t1)
+    finally:
+        db.close()
 
 
 @profile_methods.delete("/g/s/user-profile/{uid}/member/{inited_uid}")
 @profile_methods.delete("/x{ndcId}/s/user-profile/{uid}/member/{inited_uid}")
-async def unfollow_user(uid: str, request: Request, ndcId: int = 0):
+async def unfollow_user(uid: str, inited_uid: str, request: Request, ndcId: int = 0):
     t1 = timestamp()
-    if not request.state.session["validsession"]:
+    if not request.state.session.get("validsession"):
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
-
-    suid = request.state.session["uid"]
-    if suid == uid:
-        return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
-
+    actor = request.state.session["uid"]
+    if actor not in (uid, inited_uid) or uid == inited_uid:
+        return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
     db = await Database().init()
-    table = db.get(f"x{ndcId}", "Users")
-    await table.update_one({"id": uid}, {"$pull": {"whoFollows": suid}})
-    await table.update_one({"id": suid}, {"$pull": {"following": uid}})
-
-    db.close()
-    return Base.Answer(spent_time=timestamp() - t1)
+    try:
+        table = db.get(f"x{ndcId}", "Users")
+        caller = await table.find_one({"id": actor, "status": {"$nin": [5, 9, 10]}})
+        if not caller:
+            return Errors.NotEnoughRights(timestamp() - t1, lang=request.state.lang)
+        await table.update_one({"id": inited_uid}, {"$pull": {"following": uid}})
+        await table.update_one({"id": uid}, {"$pull": {"whoFollows": inited_uid}})
+        return Base.Answer(spent_time=timestamp() - t1)
+    finally:
+        db.close()
 
 
 async def _get_push_settings_table(db, ndcId: int):
@@ -867,59 +929,67 @@ async def get_user_info(uid: str, request: Request, ndcId: int = 0):
         return Errors.InvalidSession(timestamp() - t1, lang=request.state.lang)
     trigger_uid = request.state.session["uid"]
     db = await Database().init()
-    g_table = db.get(table="Users")
-    table = db.get(database=f"x{ndcId}", table="Users")
-    row2 = await table.find_one({"id": uid})
-    if row2 is None:
-        return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
-    comments_table = db.get(f"x{ndcId}", "Comments")
-    row2["commentsCount"] = await comments_table.count_documents(
-        {"rootId": f"profile:{uid}"}
-    )
-
-    global_row = await g_table.find_one({"id": uid})
-    if global_row:
-        row2["tagList"] = list(
-            set(global_row.get("tagList", []) + row2.get("tagList", []))
+    try:
+        g_table = db.get(table="Users")
+        table = db.get(database=f"x{ndcId}", table="Users")
+        row2 = await table.find_one({"id": uid})
+        if row2 is None:
+            return Errors.AccountNotExist(timestamp() - t1, lang=request.state.lang)
+        comments_table = db.get(f"x{ndcId}", "Comments")
+        row2["commentsCount"] = await comments_table.count_documents(
+            {"rootId": f"profile:{uid}"}
         )
 
-        row2["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
-
-        if "isTeamMember" in global_row:
-            row2["isTeamMember"] = global_row["isTeamMember"]
-
-        if "isVerified" in global_row:
-            row2["isVerified"] = global_row["isVerified"]
-        if global_row.get("status", 0) in [9, 10]:
-            row2["status"] = global_row["status"]
-        if global_row.get("extensions", {}).get("__disabledLevel__"):
-            row2["extensions"]["__disabledLevel__"] = global_row["extensions"][
-                "__disabledLevel__"
-            ]
-        row2["isBot"] = global_row.get("isBot", False)
-
-        if ndcId == 0:
-            row2 = global_row | row2
-    if uid in await _get_online_uids(ndcId):
-        row2["onlineStatus"] = row2.get("onlineStatus", OnlineStatus.ONLINE)
-    else:
-        row2["onlineStatus"] = OnlineStatus.OFFLINE
-
-    db.close()
-    async with await StoreService.create(trigger_uid, ndcId) as svc:
-        row2["iconFrame"] = await svc.frame_icon(row2.get("frameId"))
-
-    return Base.Answer(
-        {
-            "userProfile": User.GetUserInfo(
-                row2,
-                triggerUserId=trigger_uid,
-                extensions=row2.get("extensions"),
-                ndcId=ndcId,
+        global_row = await g_table.find_one({"id": uid})
+        if global_row:
+            row2["tagList"] = list(
+                set(global_row.get("tagList", []) + row2.get("tagList", []))
             )
-        },
-        spent_time=timestamp() - t1,
-    )
+
+            row2["isPaidSubscriber"] = global_row.get("isPaidSubscriber", False)
+
+            if "isTeamMember" in global_row:
+                row2["isTeamMember"] = global_row["isTeamMember"]
+
+            if "isVerified" in global_row:
+                row2["isVerified"] = global_row["isVerified"]
+            if global_row.get("status", 0) in [9, 10]:
+                row2["status"] = global_row["status"]
+            if global_row.get("extensions", {}).get("__disabledLevel__"):
+                row2["extensions"]["__disabledLevel__"] = global_row["extensions"][
+                    "__disabledLevel__"
+                ]
+            row2["isBot"] = global_row.get("isBot", False)
+
+            if ndcId == 0:
+                row2 = global_row | row2
+        if uid in await _get_online_uids(ndcId):
+            row2["onlineStatus"] = row2.get("onlineStatus", OnlineStatus.ONLINE)
+        else:
+            row2["onlineStatus"] = OnlineStatus.OFFLINE
+
+        async with await StoreService.create(trigger_uid, ndcId) as svc:
+            row2["iconFrame"] = await svc.frame_icon(row2.get("frameId"))
+
+        return Base.Answer(
+            {
+                "userProfile": await project_profile(
+                    db,
+                    ndcId,
+                    trigger_uid,
+                    User.GetUserInfo(
+                        row2,
+                        triggerUserId=trigger_uid,
+                        extensions=row2.get("extensions"),
+                        ndcId=ndcId,
+                    ),
+                )
+            },
+            spent_time=timestamp() - t1,
+        )
+
+    finally:
+        db.close()
 
 
 @profile_methods.post("/g/s/user-profile/{uid}")
@@ -1009,7 +1079,11 @@ async def edit_user_info(uid, request: Request, ndcId=0):
         row2["iconFrame"] = await svc.frame_icon(row2.get("frameId"))
 
     return Base.Answer(
-        {"userProfile": User.GetUserInfo(row2, ndcId=ndcId)},
+        {
+            "userProfile": User.GetUserInfo(
+                row2, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            )
+        },
         spent_time=timestamp() - t1,
     )
 
@@ -1038,7 +1112,11 @@ async def get_self_info(request: Request, ndcId: int = 0):
         row["iconFrame"] = await svc.frame_icon(row.get("frameId"))
 
     return Base.Answer(
-        {"userProfile": User.GetUserInfo(row, ndcId=ndcId)},
+        {
+            "userProfile": User.GetUserInfo(
+                row, ndcId=ndcId, triggerUserId=request.state.session.get("uid")
+            )
+        },
         spent_time=timestamp() - t1,
     )
 

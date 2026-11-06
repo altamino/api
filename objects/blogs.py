@@ -155,11 +155,29 @@ class Blog:
                 "quizInBestQuizzes": extensions.get("quizInBestQuizzes", False),
             }
 
+        fans_locked = False
+        if connection is not None and (data.get("extensions") or {}).get("fansOnly"):
+            from helpers.fan_access import can_read_fan_content
+
+            fans_locked = not await can_read_fan_content(
+                connection, ndcId, data.get("authorId"), trigger_uid
+            )
         return (
             base
             | {
-                "author": User.GetUserInfo(
-                    author_data, ndcId=ndcId, triggerUserId=trigger_uid
+                "needHidden": fans_locked,
+                "author": (
+                    lambda author: (
+                        {**author, "role": 254, "catalogAuthorRole": author.get("role")}
+                        if data["blogType"] == 2
+                        and data.get("isCurated")
+                        and isinstance(author, dict)
+                        else author
+                    )
+                )(
+                    User.GetUserInfo(
+                        author_data, ndcId=ndcId, triggerUserId=trigger_uid
+                    )
                 ),
                 "content": data.get("content"),
                 "type": data["blogType"],
@@ -186,6 +204,7 @@ class Blog:
                     else 0
                 ),
                 "keywords": data.get("keywords"),
+                "taggedBlogCategoryIdList": data.get("taggedBlogCategoryIdList", []),
                 "viewCount": 0,
                 "timestamp": data.get("pollTimestamp"),
                 "durationInDays": data.get("pollDuration"),
@@ -212,4 +231,9 @@ class Blog:
                 ),
             }
             | quiz_extra
+            | (
+                {"content": None, "mediaList": [], "polloptList": None}
+                if fans_locked
+                else {}
+            )
         )

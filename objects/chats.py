@@ -1,3 +1,4 @@
+from helpers.chat_preferences import is_pinned
 from datetime import UTC, datetime
 from typing import Union
 
@@ -300,7 +301,9 @@ class Chat:
             "keywords": None,
             "membersCount": len(data["memberList"] + data["invitedList"]),
             "strategyInfo": "{}",
-            "isPinned": False,
+            "isPinned": await is_pinned(connection, trigger_uid, ndcId, chatId)
+            if trigger_uid
+            else False,
             "title": data.get("title"),
             "tipInfo": data.get(
                 "tipInfo",
@@ -358,7 +361,7 @@ class Chat:
                 "bannedMemberUidList": data["bannedUids"],
                 "visibility": 2,
                 "lastMembersSummaryUpdateTime": 1703655999,
-                "fansOnly": False,
+                "fansOnly": bool(data.get("fansOnly", False)),
                 "vvChatJoinType": 1,
                 "channelType": data.get("channelType", 0),
                 "announcement": data["announcement"],

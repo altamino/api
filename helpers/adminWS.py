@@ -1,3 +1,6 @@
+import logging
+from helpers.database.mongo import Database
+from helpers.ws_outbox import enqueue, is_durable
 import json
 from typing import List, Optional
 from helpers.database.redis import get as get_redis
@@ -29,4 +32,20 @@ async def send_ws_message(
     }
     if uids is not None:
         payload["uids"] = uids
-    await redis.publish(WS_CHANNEL_CMD, json.dumps(payload))
+    durable = False
+    if isinstance(uids, list) and uids and is_durable(message, payload["type"]):
+        db = await Database().init()
+        try:
+            await enqueue(db.get(), message, uids, payload["type"])
+            durable = payload["_durable"] = True
+        finally:
+            db.close()
+    try:
+        await redis.publish(WS_CHANNEL_CMD, json.dumps(payload))
+    except Exception as error:
+        if not durable:
+            raise
+        # Polling workers still deliver persisted events if Redis is unavailable.
+        logging.getLogger("altamino").warning(
+            "WS wake-up unavailable; event persisted (%s)", error.__class__.__name__
+        )
