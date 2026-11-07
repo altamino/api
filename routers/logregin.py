@@ -1,6 +1,5 @@
 import re
 from asyncio import to_thread as asyncio_thread
-from base64 import b64decode, b64encode
 from json import dumps
 from math import ceil
 from time import time as timestamp
@@ -521,8 +520,8 @@ async def login(request: Request):
                     "auid": row["id"],
                     "account": User.OwnSensetiveProfile(row),
                     "userProfile": User.OwnNonSensetiveProfile(additionalRow | row),
-                    "secondSecret": f"54 {Ferret.encrypt(ferrets_meal)}",
-                    "secret": f"31 {row['id']} {ip} {b64encode(passwordHash.encode()).decode()} {tmstmp} {31 * tmstmp}",
+                    "secondSecret": f"54 {Ferret.encrypt(ferrets_meal).decode()}",
+                    "secret": f"31 {row['id']} {ip} {Ferret.encrypt(passwordHash).decode()} {tmstmp} {31 * tmstmp}",
                     "sid": await SessionProcessor.Make(
                         row["id"], ip, data["clientType"]
                     ),
@@ -532,7 +531,7 @@ async def login(request: Request):
     # [NOTE]: future login system
     elif prefix == "54":
         junk = secretSplitted[1]
-        data = Ferret.decrypt(junk)
+        data = Ferret.decrypt(junk.encode() if isinstance(junk, str) else junk)
 
         db = await Database().init()
         table = db.get(table="Users")
@@ -572,7 +571,12 @@ async def login(request: Request):
             return Errors.InvalidRequest(
                 spent_time=timestamp() - t1, lang=request.state.lang
             )
-        decodedPswdHash = b64decode(secretSplitted[3]).decode()
+        try:
+            decodedPswdHash = Ferret.decrypt(secretSplitted[3].encode()).decode()
+        except Exception:
+            return Errors.InvalidRequest(
+                spent_time=timestamp() - t1, lang=request.state.lang
+            )
         db = await Database().init()
         table = db.get(table="Users")
         row = await table.find_one({"id": secretSplitted[1]})
