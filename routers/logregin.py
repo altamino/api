@@ -90,27 +90,36 @@ async def changePassword(request: Request):
         deviceId = data["deviceID"]
     except Exception:
         return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
-
+    
     db = await Database().init()
-    if not Config.ENABLE_EMAIL:
-        table = db.get(table="VerificationCodes")
-        row = await table.find_one({"deviceId": deviceId, "email": email})
-        if row is None:
-            return Errors.UnverifiedEmail(timestamp() - t1, lang=request.state.lang)
-        if str(code) != str(row["captchaAnswer"]):
-            return Errors.InvalidVerificationCode(
-                timestamp() - t1, lang=request.state.lang
-            )
+    codes = db.get(table="VerificationCodes")
+    codes_row = await codes.find_one_and_update(
+        {"deviceId": deviceId, "email": email, "used": {"$ne": True}},
+        {"$set": {"used": True}}
+    )
+    if codes_row is None:
+        db.close()
+        return Errors.UnverifiedEmail(timestamp() - t1, lang=request.state.lang)
+
+    if str(code) != str(codes_row["captchaAnswer"]) and not codes_row.get("codeVerified"):
+        db.close()
+        return Errors.InvalidVerificationCode(
+            timestamp() - t1, lang=request.state.lang
+        )
+    await codes.delete_one({"deviceId": deviceId, "email": email})
 
     table = db.get(table="Users")
     row = await table.find_one({"email": email, "passwordHash": oldSecret})
     if row is None:
+        db.close()
         return Errors.UserUnavailable(timestamp() - t1, lang=request.state.lang)
-    print(uid, row.get("id"))
-    # if row.get("id") != uid:
-    #    return Errors.SUS()
+    
+    if row.get("id") != uid:
+        db.close()
+        return Errors.SUS(timestamp() - t1, lang=request.state.lang)
 
     table.update_one({"email": email}, {"$set": {"passwordHash": updateSecret}})
+    db.close()
     return Base.Answer(
         {},
         spent_time=timestamp() - t1,
@@ -352,23 +361,29 @@ async def register(request: Request):
 
     if Config.ENABLE_EMAIL:
         codes = db.get(table="VerificationCodes")
-        codes_row = await codes.find_one({"deviceId": data["deviceID"], "email": email})
+        codes_row = await codes.find_one_and_update(
+            {"deviceId": data["deviceID"], "email": email, "used": {"$ne": True}},
+            {"$set": {"used": True}}
+        )
         if codes_row is None:
-            print("No codes")
+            print("No codes or already used")
+            db.close()
             return Errors.UnverifiedEmail(timestamp() - t1, lang=request.state.lang)
         if data.get("validationContext"):
             if str(data["validationContext"]["data"]["code"]) != str(
                 codes_row["captchaAnswer"]
-            ):
+            ) and not codes_row.get("codeVerified"):
                 print("Invalid code (somehow)")
+                db.close()
                 return Errors.InvalidVerificationCode(
                     timestamp() - t1, lang=request.state.lang
                 )
             else:
                 codes_row["codeVerified"] = True
 
-        if not codes_row["codeVerified"]:
+        if not codes_row.get("codeVerified"):
             print("Code not verified")
+            db.close()
             return Errors.InvalidRequest(timestamp() - t1, lang=request.state.lang)
 
     users = db.get(table="Users")
