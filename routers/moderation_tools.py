@@ -288,9 +288,22 @@ async def admin_action(
     table_map = {
         "blog": ("Blogs", 1),
         "item": ("Blogs", 1),
+        "post": ("Blogs", 1),
+        "blogs": ("Blogs", 1),
+        "wiki": ("Blogs", 1),
+        "quiz": ("Blogs", 1),
+        "poll": ("Blogs", 1),
+        "story": ("Blogs", 1),
+        "image": ("Blogs", 1),
         "thread": ("Chats", 12),
+        "chat": ("Chats", 12),
+        "chats": ("Chats", 12),
+        "chat-thread": ("Chats", 12),
         "chat/thread": ("Chats", 12),
         "user-profile": ("Users", 0),
+        "user": ("Users", 0),
+        "users": ("Users", 0),
+        "member": ("Users", 0),
     }
     table_name, oT = table_map.get(object_type, (None, None))
     if not table_name:
