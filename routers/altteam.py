@@ -15,6 +15,7 @@ from fastapi import APIRouter, Request
 
 from helpers.aquarium import Blake
 from helpers.config import Config
+from helpers.functions import is_app_link
 from helpers.database.models import Global, ModelFabric
 from helpers.database.mongo import Database
 from helpers.database.redis import get as get_redis
@@ -548,11 +549,14 @@ async def _fetch_resource_config(resource_url: str) -> tuple[str, dict] | None:
     Возвращает (md5_hex, config_dict) либо None, если скачать/распарсить не удалось.
     """
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(resource_url) as resp:
-                if resp.status != 200:
-                    return None
-                raw = await resp.read()
+        if not is_app_link(resource_url):
+            raise Exception("Not trusted link")
+        else:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(resource_url) as resp:
+                    if resp.status != 200:
+                        return None
+                    raw = await resp.read()
     except Exception as e:
         print(e)
         return None

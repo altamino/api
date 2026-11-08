@@ -1,5 +1,8 @@
 name: Triggering webhook after successful build
 
+permissions:
+  contents: read
+
 on:
     workflow_run:
         workflows: ["Repo -> Build -> GHCR"]
